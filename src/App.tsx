@@ -1029,6 +1029,49 @@ export default function App() {
                   )}
                 </section>
               </div>
+              {active.length > 0 && (
+                <section
+                  className="individual-goal-charts"
+                  aria-label="Savings chart for each goal"
+                >
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">ONE GOAL AT A TIME</p>
+                      <h2>Each goal, taking shape</h2>
+                      <p>
+                        Solid main targets. A separate dotted plan for every
+                        stretch milestone.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="goal-charts-grid">
+                    {active.map((g) => (
+                      <section
+                        className="panel chart-panel"
+                        key={g.id}
+                        aria-label={`${g.name} savings chart`}
+                      >
+                        <div className="panel-header">
+                          <div>
+                            <h3>{g.name}</h3>
+                            <p>Main target and individual stretch milestones</p>
+                          </div>
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              setDialog({ kind: "detail", id: g.id })
+                            }
+                          >
+                            View goal
+                            <ArrowRight size={14} />
+                          </button>
+                        </div>
+                        <Chart data={data} goalId={g.id} />
+                      </section>
+                    ))}
+                  </div>
+                </section>
+              )}
               {behind > 0 && (
                 <div className="gentle-notice">
                   <span className="notice-dot" />

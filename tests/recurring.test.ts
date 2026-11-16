@@ -5,6 +5,7 @@ import {
   creditDueDate,
   recurrenceDate,
   upcomingSubscriptions,
+  incomeCommitments,
 } from "../src/lib/recurring";
 import { makeDemo } from "../src/lib/demo";
 import { today } from "../src/lib/savings";
@@ -13,6 +14,89 @@ test("credit due dates always use the following month and clamp days 29–31", (
   assert.equal(creditDueDate("2027-12-30", 15), "2028-01-15");
   assert.equal(creditDueDate("2028-01-31", 31), "2028-02-29");
   assert.equal(creditDueDate("2026-11-01", 15), "2026-12-15");
+});
+
+test("income reserves weekly, monthly and yearly charges even when credit is due next month", () => {
+  const d = makeDemo(),
+    on = "2026-11-16";
+  d.purchases = [];
+  d.transactions = [];
+  d.entries = [];
+  d.subscriptions = (
+    [
+      ["monthly", "month", 2000, "2026-11-20"],
+      ["weekly", "week", 500, "2026-11-20"],
+      ["annual", "year", 12000, "2026-12-01"],
+      ["boundary", "month", 9000, "2026-12-16"],
+    ] as const
+  ).map(([id, cadence, amount, date]) => ({
+    id,
+    user_id: "demo",
+    name: id,
+    card: "Visa",
+    amount,
+    cadence,
+    anchor_date: date,
+    next_charge_date: date,
+    occurrence: 0,
+    status: "active",
+    created_at: on,
+  }));
+  // Four weekly charges, one monthly renewal, and the yearly renewal.
+  assert.equal(incomeCommitments(d, on, "month").amount, 16000);
+  assert.equal(incomeCommitments(d, on, "week").amount, 2500);
+  d.subscriptions[0].status = "paused";
+  assert.equal(incomeCommitments(d, on, "month").amount, 14000);
+});
+
+test("issuing a subscription charge preserves its reservation without double-counting due credit", () => {
+  const d = makeDemo(),
+    on = "2026-11-16";
+  d.purchases = [];
+  d.transactions = [];
+  d.entries = [];
+  d.subscriptions = [
+    {
+      id: "sub",
+      user_id: "demo",
+      name: "Membership",
+      card: "Visa",
+      amount: 2000,
+      cadence: "month",
+      anchor_date: on,
+      next_charge_date: on,
+      occurrence: 0,
+      status: "active",
+      created_at: on,
+    },
+  ];
+  assert.equal(incomeCommitments(d, on, "month").amount, 2000);
+  d.purchases = [
+    {
+      id: "charge",
+      user_id: "demo",
+      name: "Membership",
+      card: "Visa",
+      amount: 2000,
+      purchased_on: on,
+      due_date: "2026-12-20",
+      notes: "",
+      status: "active",
+      created_at: on,
+      subscription_id: "sub",
+      subscription_charge_date: on,
+    },
+  ];
+  d.subscriptions[0].next_charge_date = "2026-12-16";
+  d.subscriptions[0].occurrence = 1;
+  assert.equal(incomeCommitments(d, on, "month").amount, 2000);
+  d.purchases[0].due_date = "2026-12-15";
+  const result = incomeCommitments(d, on, "month");
+  assert.equal(result.credit, 2000);
+  assert.equal(result.subscriptions, 0);
+  assert.equal(result.amount, 2000);
+  d.purchases[0].status = "cancelled";
+  assert.equal(incomeCommitments(d, on, "month").amount, 0);
 });
 test("weekly, monthly and yearly renewals retain the original calendar anchor", () => {
   assert.equal(recurrenceDate("2026-12-28", "week", 1), "2027-01-04");

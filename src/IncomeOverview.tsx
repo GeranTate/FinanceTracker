@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { ArrowRight, AlertCircle, Wallet } from "lucide-react";
 import type { Snapshot } from "./types";
-import { upcomingSubscriptions, creditDueDate } from "./lib/recurring";
+import { incomeCommitments } from "./lib/recurring";
 import { estimateIncome, incomeConfig } from "./lib/income";
 import {
   money,
+  addDays,
   primarySavings,
-  purchaseCommitments,
   dateLabel,
   today,
 } from "./lib/savings";
@@ -23,17 +23,9 @@ export default function IncomeOverview({
   const on = today(data.settings.timezone),
     net = estimateIncome(data.settings),
     main = primarySavings(data, on),
-    bills = purchaseCommitments(data, on, cadence),
+    bills = incomeCommitments(data, on, cadence),
     currency = data.settings.currency;
-  const upcoming = data.settings.credit_due_day
-    ? upcomingSubscriptions(data, on, bills.end)
-        .filter(
-          (r) =>
-            creditDueDate(r.date, data.settings.credit_due_day!) <= bills.end,
-        )
-        .reduce((sum, r) => sum + r.amount, 0)
-    : 0;
-  const commitments = bills.amount + upcoming;
+  const commitments = bills.amount;
   const income = cadence === "week" ? net.weekly : net.monthly,
     saving = cadence === "week" ? main.weekly : main.monthly,
     remaining = income - saving - commitments;
@@ -98,10 +90,11 @@ export default function IncomeOverview({
             </div>
             <span className="equation-sign">−</span>
             <button className="income-bills" onClick={onPurchases}>
-              <span>Credit & subscription payments</span>
+              <span>Credit due & subscription charges</span>
               <strong>{money(commitments, currency)}</strong>
               <small>
-                Unpaid, due by {dateLabel(bills.end, true)} · includes overdue
+                Credit due + renewals through{" "}
+                {dateLabel(addDays(bills.end, -1), true)}
               </small>
             </button>
             <span className="equation-sign">=</span>
@@ -193,11 +186,13 @@ export default function IncomeOverview({
             <p className="fine-print">
               Monthly income uses annual income ÷ 12. Monthly goal pace uses
               daily catch-up × 7 × 52 ÷ 12, capped at the remaining target;
-              overdue targets require their full remainder. Purchase payments
-              are unpaid balances due by the date shown, including overdue
-              amounts. Recording payments reduces Bank and removes that
-              obligation from this forward-looking forecast. Living expenses and
-              interest are not included.
+              overdue targets require their full remainder. Credit includes
+              unpaid balances due by {dateLabel(bills.end, true)}, including
+              overdue amounts. Subscription charges during the selected week or
+              month are reserved even when their credit payment is due later. A
+              charge already counted as due credit is included once. Recording
+              payments reduces Bank and the unpaid obligation. Living expenses
+              and interest are not included.
             </p>
           </details>
         </>

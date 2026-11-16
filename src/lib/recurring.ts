@@ -1,5 +1,11 @@
 import type { Snapshot, Subscription } from "../types";
-import { addDays, bankBalance, nextMonth, purchaseBalance } from "./savings";
+import {
+  addDays,
+  bankBalance,
+  nextMonth,
+  purchaseBalance,
+  purchaseCommitments,
+} from "./savings";
 
 export function creditDueDate(purchased: string, dueDay: number) {
   const [y, m] = purchased.split("-").map(Number);
@@ -50,7 +56,7 @@ export function bankReserves(data: Snapshot, on: string) {
   let credit = 0,
     subscriptionCredit = 0;
   for (const p of data.purchases || []) {
-    credit += purchaseBalance(data,p.id);
+    credit += purchaseBalance(data, p.id);
     if (p.subscription_id) subscriptionCredit += purchaseBalance(data, p.id);
   }
   const end = nextMonth(on),
@@ -69,5 +75,38 @@ export function bankReserves(data: Snapshot, on: string) {
     end,
     afterCredit: bank - credit,
     available: bank - credit - subscriptions,
+  };
+}
+
+// Reserve renewals by charge date, even when their credit bill is due later.
+// The charge window excludes its end date to avoid two monthly renewals at
+// the same day-of-month boundary. Existing due credit keeps its normal window.
+export function incomeCommitments(
+  data: Snapshot,
+  on: string,
+  cadence: "week" | "month",
+) {
+  const bills = purchaseCommitments(data, on, cadence);
+  const dueIds = new Set(bills.purchases.map((p) => p.id));
+  const upcoming = upcomingSubscriptions(data, on, bills.end).filter(
+    (r) => r.date < bills.end,
+  );
+  const renewals = upcoming.reduce((sum, r) => sum + r.amount, 0);
+  const issued = (data.purchases || []).filter(
+    (p) =>
+      p.subscription_id &&
+      p.purchased_on >= on &&
+      p.purchased_on < bills.end &&
+      !dueIds.has(p.id),
+  );
+  const issuedAmount = issued.reduce(
+    (sum, p) => sum + purchaseBalance(data, p.id),
+    0,
+  );
+  return {
+    ...bills,
+    credit: bills.amount,
+    subscriptions: renewals + issuedAmount,
+    amount: bills.amount + renewals + issuedAmount,
   };
 }

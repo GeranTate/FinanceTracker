@@ -7,6 +7,8 @@ import {
   goalBalance,
   expectedSavings,
   money,
+  plan,
+  dateLabel,
   today,
 } from "./lib/savings";
 export default function Chart({
@@ -40,6 +42,17 @@ export default function Chart({
     active.some((g) => g.id === m.goal_id),
   );
   const hasStretch = milestones.some((m) => !m.is_primary);
+  const stretchMilestones = milestones
+    .filter((m) => !m.is_primary)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const stretchColors = [
+    "#8a72a0",
+    "#bc7841",
+    "#558497",
+    "#aa627c",
+    "#647d48",
+    "#7a6b50",
+  ];
   const start = milestones.reduce(
     (s, m) => (m.baseline_date < s ? m.baseline_date : s),
     now,
@@ -85,6 +98,16 @@ export default function Chart({
   const stretchPath = points
     .map((p, i) => `${i ? "L" : "M"}${x(p.date)},${y(p.stretch)}`)
     .join(" ");
+  const individualStretchPaths = stretchMilestones.map((m, index) => ({
+    milestone: m,
+    color: stretchColors[index % stretchColors.length],
+    path: points
+      .map(
+        (p, i) =>
+          `${i ? "L" : "M"}${x(p.date)},${y(p.date < m.baseline_date ? 0 : plan(m, 0, p.date).expected)}`,
+      )
+      .join(" "),
+  }));
   const actualPath = actual
     .map((p, i) => `${i ? "L" : "M"}${x(p.date)},${y(p.actual)}`)
     .join(" ");
@@ -101,33 +124,54 @@ export default function Chart({
         <span className={difference < -1 ? "behind-text" : ""}>
           Main plan: <strong>{pace(difference)}</strong>
         </span>
-        {hasStretch && (
-          <span>
-            Stretch plan: <strong>{pace(stretchDifference)}</strong>
-          </span>
-        )}
+        {goalId
+          ? stretchMilestones.map((m) => (
+              <span key={m.id}>
+                {m.name}:{" "}
+                <strong>
+                  {pace(
+                    current -
+                      (now < m.baseline_date ? 0 : plan(m, 0, now).expected),
+                  )}
+                </strong>
+              </span>
+            ))
+          : hasStretch && (
+              <span>
+                Stretch plan: <strong>{pace(stretchDifference)}</strong>
+              </span>
+            )}
       </div>
       <div className="chart-legend">
         <span>
           <i />
           Saved
         </span>
-        <span>
+        <span className={goalId ? "individual-main-legend" : undefined}>
           <i />
-          Main plan
+          {goalId
+            ? `${main[0].name} · ${money(main[0].target, data.settings.currency, true)}`
+            : "Main plan"}
         </span>
-        {hasStretch && (
-          <span className="stretch-legend">
-            <i />
-            With stretch targets
-          </span>
-        )}
+        {goalId
+          ? individualStretchPaths.map(({ milestone: m, color }) => (
+              <span className="individual-stretch-legend" key={m.id}>
+                <i style={{ borderColor: color }} />
+                {m.name} · {money(m.target, data.settings.currency, true)}
+              </span>
+            ))
+          : hasStretch && (
+              <span className="stretch-legend">
+                <i />
+                With stretch targets
+              </span>
+            )}
       </div>
       <svg
         className="savings-chart"
         viewBox="0 0 790 258"
         role="img"
-        aria-label={`Savings plan for your active goals. Currently saved ${money(current, data.settings.currency)}. Solid green is recorded savings; gray dashed is the main plan; purple dashed includes stretch targets. Main plan: ${pace(difference)}.`}
+        aria-label={`${goalId ? active[0]?.name : "Savings plan for your active goals"}. Currently saved ${money(current, data.settings.currency)}. ${goalId ? "Solid blue is the main target; each dotted line is a separate stretch milestone; green is recorded savings." : "Solid green is recorded savings; gray dashed is the main plan; purple dashed includes stretch targets."} Main plan: ${pace(difference)}.`}
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -150,22 +194,45 @@ export default function Chart({
             </text>
           </g>
         ))}
-        {hasStretch && (
-          <path
-            d={stretchPath}
-            fill="none"
-            stroke="#8a72a0"
-            strokeWidth="2"
-            strokeDasharray="3 5"
-          />
-        )}
+        {goalId
+          ? individualStretchPaths.map(({ milestone: m, color, path }) => (
+              <path
+                key={m.id}
+                d={path}
+                fill="none"
+                stroke={color}
+                strokeWidth="2.2"
+                strokeDasharray="2 5"
+                strokeLinecap="round"
+              >
+                <title>
+                  {m.name}: {money(m.target, data.settings.currency)} by{" "}
+                  {dateLabel(m.due_date)}
+                </title>
+              </path>
+            ))
+          : hasStretch && (
+              <path
+                d={stretchPath}
+                fill="none"
+                stroke="#8a72a0"
+                strokeWidth="2"
+                strokeDasharray="3 5"
+              />
+            )}
         <path
           d={plannedPath}
           fill="none"
-          stroke="#afb7a6"
-          strokeWidth="2"
-          strokeDasharray="6 6"
-        />
+          stroke={goalId ? "#43688b" : "#afb7a6"}
+          strokeWidth={goalId ? "2.5" : "2"}
+          strokeDasharray={goalId ? undefined : "6 6"}
+        >
+          <title>
+            {goalId
+              ? `${main[0].name}: ${money(main[0].target, data.settings.currency)} by ${dateLabel(main[0].due_date)}`
+              : "Combined main savings plan"}
+          </title>
+        </path>
         {actual.length > 0 && (
           <>
             <path
@@ -220,8 +287,9 @@ export default function Chart({
       </svg>
       {hasStretch && (
         <p className="fine-print">
-          Stretch targets share each goal’s balance. The purple line tracks the
-          combined pace needed for all milestones.
+          {goalId
+            ? "Solid blue shows the main target. Each dotted line follows a stretch milestone’s own target and date. Green shows recorded savings; all milestones share this goal’s balance."
+            : "Stretch targets share each goal’s balance. The purple line tracks the combined pace needed for all milestones."}
         </p>
       )}
     </>

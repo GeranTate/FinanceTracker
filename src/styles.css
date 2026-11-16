@@ -3057,3 +3057,51 @@ select:disabled {
   background: #eaf2e8;
   color: var(--green);
 }
+
+.individual-goal-charts {
+  margin: 28px 0;
+}
+.individual-goal-charts .section-heading p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+.goal-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.goal-charts-grid .chart-summary {
+  margin-inline: 24px;
+}
+.goal-charts-grid .chart-legend {
+  margin-inline: 24px;
+  justify-content: flex-start;
+}
+.chart-legend span.individual-main-legend i {
+  border: 0;
+  border-top: 2px solid #43688b;
+  background: none;
+  height: 0;
+  width: 16px;
+  border-radius: 0;
+}
+.chart-legend span.individual-stretch-legend i {
+  border: 0;
+  border-top: 2px dotted;
+  background: none;
+  height: 0;
+  width: 16px;
+  border-radius: 0;
+}
+@media (max-width: 1180px) {
+  .goal-charts-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .goal-charts-grid .chart-summary,
+  .goal-charts-grid .chart-legend {
+    margin-inline: 12px;
+  }
+}
