@@ -30,6 +30,7 @@ import {
   AlertCircle,
   History,
   CreditCard,
+  Repeat,
   Undo2,
 } from "lucide-react";
 import type { Goal, Snapshot } from "./types";
@@ -58,16 +59,22 @@ import Chart from "./Chart";
 import IncomeOverview from "./IncomeOverview";
 import Purchases, { PurchaseForm } from "./Purchases";
 import GoalDetail from "./GoalDetail";
+import BankReserves from "./BankReserves";
+import Subscriptions, { SubscriptionForm } from "./Subscriptions";
 
 type Page =
   | "overview"
   | "goals"
   | "bank"
+  | "subscriptions"
   | "purchases"
   | "history"
   | "settings";
 type DialogState = {
   kind:
+    | "subscription_create"
+    | "subscription_edit"
+    | "subscription_pause"
     | "purchase_create"
     | "purchase_edit"
     | "purchase_pay"
@@ -89,6 +96,7 @@ const pages = [
   { id: "goals", label: "My goals", icon: Target },
   { id: "bank", label: "Bank", icon: Wallet },
   { id: "purchases", label: "Purchases", icon: CreditCard },
+  { id: "subscriptions", label: "Subscriptions", icon: Repeat },
   { id: "history", label: "History", icon: History },
   { id: "settings", label: "Settings", icon: Settings },
 ] as const;
@@ -740,25 +748,29 @@ export default function App() {
         : "Your next chapter starts here."
       : page === "goals"
         ? "Good things take a little planning."
-        : page === "purchases"
-          ? "Make room for everyday life."
-          : page === "bank"
-            ? "A little room for possibility."
-            : page === "history"
-              ? "Look how far you’ve come."
-              : "A plan that fits your life.";
+        : page === "subscriptions"
+          ? "Keep recurring costs in view."
+          : page === "purchases"
+            ? "Make room for everyday life."
+            : page === "bank"
+              ? "A little room for possibility."
+              : page === "history"
+                ? "Look how far you’ve come."
+                : "A plan that fits your life.";
   const subheading =
     page === "overview"
       ? "Every little bit adds up. Here’s where you stand."
       : page === "goals"
         ? "Give what matters a place in your plans."
-        : page === "purchases"
-          ? "Know what you owe, and when it needs a place in your budget."
-          : page === "bank"
-            ? "Your unallocated savings, ready for whatever comes next."
-            : page === "history"
-              ? "Every contribution, every decision, every milestone."
-              : "Set your pace. We’ll help you keep it realistic.";
+        : page === "subscriptions"
+          ? "Subscriptions and memberships, planned before they renew."
+          : page === "purchases"
+            ? "Know what you owe, and when it needs a place in your budget."
+            : page === "bank"
+              ? "Your unallocated savings, ready for whatever comes next."
+              : page === "history"
+                ? "Every contribution, every decision, every milestone."
+                : "Set your pace. We’ll help you keep it realistic.";
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -884,20 +896,24 @@ export default function App() {
                 onClick={() =>
                   setDialog({
                     kind:
-                      page === "purchases"
-                        ? "purchase_create"
-                        : page === "bank"
-                          ? "deposit"
-                          : "create",
+                      page === "subscriptions"
+                        ? "subscription_create"
+                        : page === "purchases"
+                          ? "purchase_create"
+                          : page === "bank"
+                            ? "deposit"
+                            : "create",
                   })
                 }
               >
                 <Plus size={17} />
-                {page === "purchases"
-                  ? "Add purchase"
-                  : page === "bank"
-                    ? "Add savings"
-                    : "New goal"}
+                {page === "subscriptions"
+                  ? "Add subscription"
+                  : page === "purchases"
+                    ? "Add purchase"
+                    : page === "bank"
+                      ? "Add savings"
+                      : "New goal"}
               </button>
             )}
           </div>
@@ -911,37 +927,35 @@ export default function App() {
               <button onClick={() => void refresh()}>Retry</button>
             </div>
           )}
-          {(page === "overview" || page === "bank") && (
+          {page === "overview" && (
             <div className="stats-grid">
               <Stat
                 featured
-                label={
-                  page === "bank" ? "AVAILABLE IN BANK" : "SAVED TOWARD GOALS"
-                }
-                value={money(page === "bank" ? bank : saved, currency)}
-                caption={
-                  page === "bank"
-                    ? "Ready to allocate or spend"
-                    : `Across ${active.length} active goal${active.length === 1 ? "" : "s"}`
-                }
+                label="SAVED TOWARD GOALS"
+                value={money(saved, currency)}
+                caption={`Across ${active.length} active goals`}
               />
               <Stat
-                label={
-                  page === "bank" ? "ALLOCATED TO GOALS" : "AVAILABLE IN BANK"
-                }
-                value={money(page === "bank" ? saved : bank, currency)}
-                caption={
-                  page === "bank"
-                    ? "Working toward what matters"
-                    : "A little flexibility for what’s next"
-                }
+                label="TOTAL BANK"
+                value={money(bank, currency)}
+                caption="Cash before unpaid commitments"
               />
               <Stat
                 label="TOTAL TRACKED CASH"
                 value={money(saved + bank, currency)}
-                caption="Goal savings + your Bank balance"
+                caption="Goal savings + Bank cash"
               />
             </div>
+          )}
+          {(page === "overview" || page === "bank" || page === "purchases") && (
+            <BankReserves data={data} />
+          )}
+          {page === "subscriptions" && (
+            <Subscriptions
+              data={data}
+              onAction={(kind, id) => setDialog({ kind, id })}
+              onSettings={() => setPage("settings")}
+            />
           )}
           {page === "purchases" && (
             <Purchases
@@ -1305,33 +1319,35 @@ export default function App() {
       {dialog && (
         <Modal
           title={
-            dialog.kind === "purchase_create"
-              ? "Plan for a purchase."
-              : dialog.kind === "purchase_edit"
-                ? "Update this purchase."
-                : dialog.kind === "purchase_pay"
-                  ? "Record a payment."
-                  : dialog.kind === "purchase_cancel"
-                    ? "Cancel this purchase?"
-                    : dialog.kind === "create"
-                      ? "Something to look forward to."
-                      : dialog.kind === "detail"
-                        ? selected?.name || "Your goal"
-                        : dialog.kind === "edit"
-                          ? "Find a new pace."
-                          : dialog.kind === "deposit"
-                            ? "A little closer."
-                            : dialog.kind === "transfer"
-                              ? "Give your savings a direction."
-                              : dialog.kind === "spend"
-                                ? "Record a little of life."
-                                : dialog.kind === "acquire"
-                                  ? "Make it yours."
-                                  : dialog.kind === "reverse"
-                                    ? "Correct this entry?"
-                                    : dialog.kind === "archive"
-                                      ? "Make room for a new plan?"
-                                      : "A little guidance."
+            dialog.kind.startsWith("subscription_")
+              ? "Your recurring commitment."
+              : dialog.kind === "purchase_create"
+                ? "Plan for a purchase."
+                : dialog.kind === "purchase_edit"
+                  ? "Update this purchase."
+                  : dialog.kind === "purchase_pay"
+                    ? "Record a payment."
+                    : dialog.kind === "purchase_cancel"
+                      ? "Cancel this purchase?"
+                      : dialog.kind === "create"
+                        ? "Something to look forward to."
+                        : dialog.kind === "detail"
+                          ? selected?.name || "Your goal"
+                          : dialog.kind === "edit"
+                            ? "Find a new pace."
+                            : dialog.kind === "deposit"
+                              ? "A little closer."
+                              : dialog.kind === "transfer"
+                                ? "Give your savings a direction."
+                                : dialog.kind === "spend"
+                                  ? "Record a little of life."
+                                  : dialog.kind === "acquire"
+                                    ? "Make it yours."
+                                    : dialog.kind === "reverse"
+                                      ? "Correct this entry?"
+                                      : dialog.kind === "archive"
+                                        ? "Make room for a new plan?"
+                                        : "A little guidance."
           }
           eyebrow={
             dialog.kind === "detail"
@@ -1345,6 +1361,14 @@ export default function App() {
               data={data}
               purchase={data.purchases?.find((p) => p.id === dialog.id)}
               mode={dialog.kind as import("./Purchases").PurchaseAction}
+              save={save}
+            />
+          )}
+          {dialog.kind.startsWith("subscription_") && (
+            <SubscriptionForm
+              data={data}
+              subscription={data.subscriptions?.find((s) => s.id === dialog.id)}
+              mode={dialog.kind as import("./Subscriptions").SubscriptionAction}
               save={save}
             />
           )}

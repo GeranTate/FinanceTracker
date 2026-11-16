@@ -420,3 +420,83 @@ test("ownership policies isolate users and reject foreign IDs and direct ledger 
   await assert.rejects(() => cmd("initialize"), /Please sign in/);
   await asUser(alice);
 });
+
+test("subscriptions create credit charges once, catch up while closed, and preserve month-end anchors", async () => {
+  await asUser(alice);
+  const draft = {
+    name: "Membership",
+    amount: 1200,
+    card: "Visa",
+    cadence: "month",
+    next_charge_date: now,
+  };
+  await assert.rejects(() => cmd("subscription_create", draft), /due day/);
+  await cmd("settings", { ...(await snapshot()).settings, credit_due_day: 31 });
+  const cash = total(await snapshot());
+  const id = (await cmd("subscription_create", draft)).subscription_id;
+  const issued = (await snapshot()).purchases.filter(
+    (p: any) => p.subscription_id === id,
+  );
+  assert.equal(issued.length, 1);
+  assert.equal(issued[0].amount, 1200);
+  assert.equal(total(await snapshot()), cash);
+  await cmd("initialize");
+  await cmd("initialize");
+  assert.equal(
+    (await snapshot()).purchases.filter((p: any) => p.subscription_id === id)
+      .length,
+    1,
+  );
+  await cmd("subscription_pause", { subscription_id: id });
+  await assert.rejects(
+    async () =>
+      cmd("settings", { ...(await snapshot()).settings, credit_due_day: 32 }),
+    /between 1 and 31/,
+  );
+  const future = (
+    await cmd("subscription_create", {
+      ...draft,
+      name: "Month end",
+      next_charge_date: addDays(now, 60),
+    })
+  ).subscription_id;
+  await db.exec("reset role");
+  await db.query(
+    "update public.subscriptions set anchor_date='2026-01-31',next_charge_date='2026-01-31',occurrence=0 where id=$1",
+    [future],
+  );
+  await db.exec("select finance_private.sync_all_subscriptions()");
+  await asUser(alice);
+  const charges = (await snapshot()).purchases
+    .filter((p: any) => p.subscription_id === future)
+    .sort((a: any, b: any) => a.purchased_on.localeCompare(b.purchased_on));
+  assert.deepEqual(
+    charges.slice(0, 3).map((p: any) => p.purchased_on),
+    ["2026-01-31", "2026-02-28", "2026-03-31"],
+  );
+  assert.equal(charges[0].due_date, "2026-02-28");
+  assert.equal(
+    (await snapshot()).subscriptions.find((s: any) => s.id === future)
+      .next_charge_date,
+    "2026-11-30",
+  );
+  await assert.rejects(
+    () => db.exec("select finance_private.sync_all_subscriptions()"),
+    /permission denied/,
+  );
+  await asUser(bob);
+  assert.equal((await snapshot()).subscriptions.length, 0);
+  await assert.rejects(
+    () => cmd("subscription_edit", { ...draft, subscription_id: id }),
+    /not found/,
+  );
+  await asUser(alice);
+});
+
+test('Bank min/max preferences persist without restricting ledger actions',async()=>{
+ await asUser(alice);
+ await cmd('settings',{...(await snapshot()).settings,bank_min:1000000000,bank_max:2000000000});
+ assert.equal((await snapshot()).settings.bank_min,1000000000);
+ await cmd('deposit',{amount:1,note:'Below preferred minimum is allowed'});
+ await assert.rejects(async()=>cmd('settings',{...(await snapshot()).settings,bank_min:200,bank_max:100}),/bank_preference_range/);
+});

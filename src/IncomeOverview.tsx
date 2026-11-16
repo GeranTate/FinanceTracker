@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, AlertCircle, Wallet } from "lucide-react";
 import type { Snapshot } from "./types";
+import { upcomingSubscriptions, creditDueDate } from "./lib/recurring";
 import { estimateIncome, incomeConfig } from "./lib/income";
 import {
   money,
@@ -24,9 +25,18 @@ export default function IncomeOverview({
     main = primarySavings(data, on),
     bills = purchaseCommitments(data, on, cadence),
     currency = data.settings.currency;
+  const upcoming = data.settings.credit_due_day
+    ? upcomingSubscriptions(data, on, bills.end)
+        .filter(
+          (r) =>
+            creditDueDate(r.date, data.settings.credit_due_day!) <= bills.end,
+        )
+        .reduce((sum, r) => sum + r.amount, 0)
+    : 0;
+  const commitments = bills.amount + upcoming;
   const income = cadence === "week" ? net.weekly : net.monthly,
     saving = cadence === "week" ? main.weekly : main.monthly,
-    remaining = income - saving - bills.amount;
+    remaining = income - saving - commitments;
   const config = incomeConfig(data.settings),
     taxAnnual = net.federal + net.georgia + net.socialSecurity + net.medicare;
   return (
@@ -88,8 +98,8 @@ export default function IncomeOverview({
             </div>
             <span className="equation-sign">−</span>
             <button className="income-bills" onClick={onPurchases}>
-              <span>Purchase payments</span>
-              <strong>{money(bills.amount, currency)}</strong>
+              <span>Credit & subscription payments</span>
+              <strong>{money(commitments, currency)}</strong>
               <small>
                 Unpaid, due by {dateLabel(bills.end, true)} · includes overdue
               </small>

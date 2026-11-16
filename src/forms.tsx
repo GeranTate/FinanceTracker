@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { AlertCircle, ArrowRight, Check, Plus, Trash2 } from "lucide-react";
+import { bankReserves } from "./lib/recurring";
 import IncomeFields, { incomeDraft, parseIncomeDraft } from "./IncomeFields";
 import type { CommandPayload, Goal, Snapshot } from "./types";
 import {
@@ -493,6 +494,17 @@ export function MoneyForm({
           </select>
         </label>
       )}
+      {mode === "spend" &&
+        data.settings.bank_min != null &&
+        price > 0 &&
+        bankReserves(data, now).available - price < data.settings.bank_min && (
+          <p className="income-warning">
+            This spending would leave{" "}
+            {money(bankReserves(data, now).available - price, currency)} after
+            commitments, below your preferred Bank minimum of{" "}
+            {money(data.settings.bank_min, currency)}. You can still record it.
+          </p>
+        )}
       {mode === "transfer" && (
         <label>
           Direction
@@ -635,6 +647,15 @@ export function SettingsForm({
 }) {
   const s = data.settings;
   const [income, setIncome] = useState(() => incomeDraft(s));
+  const [bankMin, setBankMin] = useState(
+      s.bank_min == null ? "" : String(s.bank_min / 100),
+    ),
+    [bankMax, setBankMax] = useState(
+      s.bank_max == null ? "" : String(s.bank_max / 100),
+    );
+  const [creditDay, setCreditDay] = useState(
+    s.credit_due_day ? String(s.credit_due_day) : "",
+  );
   const [name, setName] = useState(s.display_name),
     [currency, setCurrency] = useState(s.currency),
     [timezone, setTimezone] = useState(s.timezone);
@@ -661,6 +682,9 @@ export function SettingsForm({
           weekly_hours: hours === "" ? null : Number(hours),
           weekly_budget: budget === "" ? null : parseMoney(budget),
           income_settings: parseIncomeDraft(income),
+          credit_due_day: creditDay === "" ? null : Number(creditDay),
+          bank_min: bankMin === "" ? null : parseMoney(bankMin),
+          bank_max: bankMax === "" ? null : parseMoney(bankMax),
         }));
       }}
     >
@@ -746,6 +770,49 @@ export function SettingsForm({
           onChange={(e) => setHours(e.target.value)}
           placeholder="40"
         />
+      </label>
+      <div className="settings-section">
+        <h3>Your preferred Bank range</h3>
+        <p>
+          Optional guidance after credit and subscription commitments. Going
+          outside this range shows a warning; it never blocks saving or
+          spending.
+        </p>
+      </div>
+      <div className="form-grid">
+        <AmountInput
+          label={`Bank minimum (${currency}, optional)`}
+          value={bankMin}
+          onChange={setBankMin}
+          required={false}
+        />
+        <AmountInput
+          label={`Bank maximum (${currency}, optional)`}
+          value={bankMax}
+          onChange={setBankMax}
+          required={false}
+        />
+      </div>
+      <div className="settings-section">
+        <h3>Credit payment schedule</h3>
+        <p>
+          New credit purchases are due the following month on this day. Dates
+          29–31 use the last day in shorter months. Existing purchase due dates
+          stay fixed.
+        </p>
+      </div>
+      <label>
+        Credit payment due day
+        <input
+          type="number"
+          min="1"
+          max="31"
+          step="1"
+          placeholder="e.g. 15"
+          value={creditDay}
+          onChange={(e) => setCreditDay(e.target.value)}
+        />
+        <small>Required for automatic subscription charges.</small>
       </label>
       <IncomeFields
         draft={income}

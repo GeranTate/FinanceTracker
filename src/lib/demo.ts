@@ -48,6 +48,7 @@ export function makeDemo(): Snapshot {
       rate_type: "gross",
       weekly_hours: 40,
       weekly_budget: 65000,
+      credit_due_day: 15,
     },
     goals: goals.map((g) => ({
       id: g.id,
@@ -114,6 +115,21 @@ export function makeDemo(): Snapshot {
         note: g.name,
         reversal_of: null,
       })),
+    ],
+    subscriptions: [
+      {
+        id: "stream",
+        user_id: uid,
+        name: "Streaming membership",
+        card: "Everyday Visa",
+        amount: 1599,
+        cadence: "month",
+        anchor_date: addDays(now, 5),
+        next_charge_date: addDays(now, 5),
+        occurrence: 0,
+        status: "active",
+        created_at: now,
+      },
     ],
     purchases: [
       {

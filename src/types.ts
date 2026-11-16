@@ -16,6 +16,9 @@ export type Settings = {
   weekly_hours: number | null;
   weekly_budget: number | null;
   income_settings?: IncomeSettings;
+  credit_due_day?: number | null;
+  bank_min?: number | null;
+  bank_max?: number | null;
 };
 export type Goal = {
   id: string;
@@ -57,7 +60,22 @@ export type Transaction = {
   reversal_of: string | null;
   purchase_id?: string | null;
 };
+export type Subscription = {
+  id: string;
+  user_id: string;
+  name: string;
+  card: string;
+  amount: number;
+  cadence: "week" | "month" | "year";
+  anchor_date: string;
+  next_charge_date: string;
+  occurrence: number;
+  status: "active" | "paused";
+  created_at: string;
+};
 export type Purchase = {
+  subscription_id?: string | null;
+  subscription_charge_date?: string | null;
   id: string;
   user_id: string;
   name: string;
@@ -84,5 +102,6 @@ export type Snapshot = {
   transactions: Transaction[];
   entries: Entry[];
   purchases?: Purchase[];
+  subscriptions?: Subscription[];
 };
 export type CommandPayload = Record<string, unknown>;

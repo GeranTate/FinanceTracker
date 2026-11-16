@@ -20,6 +20,8 @@ import {
   today,
 } from "./lib/savings";
 
+import { creditDueDate, bankReserves } from "./lib/recurring";
+
 export type PurchaseAction =
   | "purchase_create"
   | "purchase_edit"
@@ -120,6 +122,7 @@ export default function Purchases({
                     <div>
                       <h3>{p.name}</h3>
                       <p>
+                        {p.subscription_id ? "Subscription · " : ""}
                         {p.card || "Card purchase"} · Bought{" "}
                         {dateLabel(p.purchased_on, true)}
                       </p>
@@ -229,7 +232,12 @@ export function PurchaseForm({
       ),
     ),
     [bought, setBought] = useState(purchase?.purchased_on || now),
-    [due, setDue] = useState(purchase?.due_date || addDays(now, 30)),
+    [due, setDue] = useState(
+      purchase?.due_date ||
+        (data.settings.credit_due_day
+          ? creditDueDate(now, data.settings.credit_due_day)
+          : addDays(now, 30)),
+    ),
     [notes, setNotes] = useState(purchase?.notes || ""),
     [date, setDate] = useState(now);
   const { submit, busy, error } = useSubmit(save),
@@ -328,7 +336,16 @@ export function PurchaseForm({
                 min="2000-01-01"
                 max={now}
                 value={bought}
-                onChange={(e) => setBought(e.target.value)}
+                onChange={(e) => {
+                  setBought(e.target.value);
+                  if (e.target.value && data.settings.credit_due_day)
+                    setDue(
+                      creditDueDate(
+                        e.target.value,
+                        data.settings.credit_due_day,
+                      ),
+                    );
+                }}
               />
             </label>
             <label>
@@ -353,11 +370,37 @@ export function PurchaseForm({
             />
           </label>
           <p className="form-note">
-            The unpaid amount is reserved in your forecast when its due date is
-            in range. Recording a purchase doesn’t move cash from Bank.
+            Credit due dates default to your chosen day in the month after the
+            purchase. Existing due dates stay fixed. The unpaid amount is
+            reserved against Bank immediately and in your income forecast when
+            its due date is in range. Recording a purchase doesn’t move cash
+            from Bank.
           </p>
         </>
       )}
+      {mode !== "purchase_pay" &&
+        mode !== "purchase_cancel" &&
+        data.settings.bank_min != null &&
+        (() => {
+          let newAmount = 0;
+          try {
+            newAmount = parseMoney(amount);
+          } catch {
+            return null;
+          }
+          const before = bankReserves(data, now).available,
+            after =
+              before +
+              (purchase ? purchaseBalance(data, purchase.id) : 0) -
+              newAmount;
+          return after < data.settings.bank_min ? (
+            <p className="income-warning">
+              This purchase leaves {money(after, currency)} after commitments,
+              below your preferred Bank minimum of{" "}
+              {money(data.settings.bank_min, currency)}. You can still save it.
+            </p>
+          ) : null;
+        })()}
       <ErrorMessage error={error} />
       <button className="button primary full" disabled={busy}>
         {busy

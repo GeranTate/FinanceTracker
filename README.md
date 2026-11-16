@@ -112,3 +112,13 @@ After publishing, add the chosen HTTPS application URL to Supabase Auth's Site U
 Production output is dist/, created by npm run build. Configure Node 22+ and both VITE\_ variables when deploying. No Cloudflare resources or deployments are changed by the repository's scripts.
 
 Supabase sign-in and RLS remain necessary when the frontend is behind Cloudflare Access.
+
+## Subscriptions and credit reserves
+
+The subscriptions migration adds owner-only recurring schedules, a configurable credit due day (1–31), and links each automatic purchase to its schedule and charge date. The migration and `supabase/subscriptions-cron.sql` were applied to the live project on November 16, 2026; do not replay the migration there. For a new project, apply this migration after the prior migrations, then run the cron setup. This uses Supabase pg_cron; no actual credit-card charge or payment is sent. Initializing/refreshing the app also catches up missed charges. A per-owner lock and unique subscription/date constraint prevent duplicates.
+
+Choose **Credit payment due day** in Settings before adding subscriptions. New purchases default to that day in the following calendar month; shorter months use their last day. Existing purchase dates stay fixed. Weekly, monthly and yearly subscriptions create credit purchases on renewal, using the original calendar anchor. Pausing stops future charges; editing applies to future charges, leaving issued purchases intact. Resume with an explicit next charge date.
+
+Bank shows total cash, cash minus all unpaid everyday credit, and cash minus credit plus subscription commitments. Subscription commitments include unpaid issued subscription purchases and unissued renewals through the next calendar month. These buckets are disjoint: a generated purchase replaces its projected renewal. Partial payments decrease cash and the matching obligation equally. Income forecasting also includes unissued renewals whose credit payment due dates fall in the chosen forecast period.
+
+Optional Bank minimum/maximum amounts are advisory, compared against cash after commitments. Purchase and spending forms flag crossing the minimum; ledger actions remain allowed as long as actual Bank cash is sufficient.
