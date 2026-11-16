@@ -1,6 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { addDays, today } from "../src/lib/savings";
 const db = new PGlite();
@@ -63,20 +63,171 @@ before(async () => {
     insert into auth.users values('${alice}'),('${bob}');
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
-  await db.exec(
-    readFileSync(
-      new URL(
-        "../supabase/migrations/20261112213024_initial_finance_tracker.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  for (const name of readdirSync(dir)
+    .filter((n) => n.endsWith(".sql"))
+    .sort())
+    await db.exec(readFileSync(new URL(name, dir), "utf8"));
   await asUser(alice);
   await cmd("initialize");
 });
 after(async () => {
   await db.close();
+});
+test("income settings persist and reject invalid payroll amounts", async () => {
+  await asUser(alice);
+  await cmd("settings", {
+    display_name: "Alice",
+    currency: "USD",
+    timezone: "America/New_York",
+    hourly_rate: 2500,
+    rate_type: "gross",
+    weekly_hours: 40,
+    weekly_budget: null,
+    income_settings: {
+      mode: "georgia_2026",
+      filing_status: "single",
+      retirement_weekly: 5000,
+      benefits_weekly: 1000,
+      post_tax_weekly: 0,
+      actual_net_monthly: null,
+    },
+  });
+  assert.equal(
+    (await snapshot()).settings.income_settings.retirement_weekly,
+    5000,
+  );
+  await assert.rejects(
+    () =>
+      cmd("settings", {
+        display_name: "Alice",
+        currency: "USD",
+        timezone: "America/New_York",
+        hourly_rate: 2500,
+        rate_type: "gross",
+        income_settings: {
+          mode: "actual",
+          filing_status: "single",
+          retirement_weekly: -1,
+          benefits_weekly: 0,
+          post_tax_weekly: 0,
+        },
+      }),
+    /nonnegative/,
+  );
+});
+test("future goals reserve no money and reject deposits until their start date", async () => {
+  const payload = {
+    name: "Scheduled",
+    category: "Other",
+    color: "sage",
+    start_date: addDays(now, 30),
+    opening: 0,
+    milestones: [
+      {
+        name: "Main",
+        target: 10000,
+        due_date: addDays(now, 90),
+        is_primary: true,
+      },
+    ],
+  };
+  const gid = (await cmd("create_goal", payload)).goal_id;
+  await assert.rejects(
+    () => cmd("deposit", { goal_id: gid, amount: 100 }),
+    /before the goal starts/,
+  );
+  await assert.rejects(
+    () => cmd("create_goal", { ...payload, opening: 100 }),
+    /savings before/,
+  );
+  await cmd("replan", {
+    ...payload,
+    goal_id: gid,
+    start_date: addDays(now, 40),
+  });
+  assert.equal(
+    (await snapshot()).goals.find((g: any) => g.id === gid).start_date,
+    addDays(now, 40),
+  );
+  await assert.rejects(
+    () => cmd("transfer", { goal_id: gid, amount: 100, direction: "to_goal" }),
+    /before the goal starts/,
+  );
+  await cmd("replan", { ...payload, goal_id: gid, start_date: now });
+  await cmd("deposit", { goal_id: gid, amount: 100 });
+  const empty = (await cmd("create_goal", payload)).goal_id;
+  await cmd("archive", { goal_id: empty });
+  assert.equal(
+    (await snapshot()).goals.find((g: any) => g.id === empty).status,
+    "archived",
+  );
+  const a = await goal("Same deadline A"),
+    b = await goal("Same deadline B");
+  assert.notEqual(a, b);
+});
+test("purchases do not move cash until paid; partial payments and reversals reconcile", async () => {
+  await cmd("deposit", { amount: 50000, note: "Payment funds" });
+  const before = total(await snapshot());
+  const p = (
+    await cmd("purchase_create", {
+      name: "Test purchase",
+      card: "Visa",
+      amount: 10000,
+      purchased_on: now,
+      due_date: addDays(now, 20),
+    })
+  ).purchase_id;
+  assert.equal(total(await snapshot()), before);
+  const tx = (await cmd("purchase_pay", { purchase_id: p, amount: 3000 }))
+    .transaction_id;
+  assert.equal(total(await snapshot()), before - 3000);
+  await cmd("purchase_edit", {
+    purchase_id: p,
+    name: "Edited purchase",
+    amount: 12000,
+    purchased_on: now,
+    due_date: addDays(now, 25),
+  });
+  await assert.rejects(
+    () => cmd("purchase_pay", { purchase_id: p, amount: 10000 }),
+    /outstanding/,
+  );
+  await assert.rejects(
+    () => cmd("purchase_cancel", { purchase_id: p }),
+    /Reverse/,
+  );
+  await cmd("reverse", { transaction_id: tx });
+  assert.equal(total(await snapshot()), before);
+  assert.equal(
+    (await snapshot()).transactions.find((t: any) => t.reversal_of === tx)
+      .purchase_id,
+    p,
+  );
+  await cmd("purchase_cancel", { purchase_id: p });
+  assert.equal(
+    (await snapshot()).purchases.find((r: any) => r.id === p).status,
+    "cancelled",
+  );
+  await asUser(bob);
+  await cmd("initialize");
+  assert.equal((await snapshot()).purchases.length, 0);
+  assert.equal(
+    (await db.query("select * from public.purchases")).rows.length,
+    0,
+  );
+  await assert.rejects(
+    () =>
+      db.exec(
+        "insert into public.purchases(user_id,name,amount,purchased_on,due_date) values (auth.uid(),'Forbidden',100,current_date,current_date)",
+      ),
+    /permission denied/,
+  );
+  await assert.rejects(
+    () => cmd("purchase_pay", { purchase_id: p, amount: 1 }),
+    /Purchase not found/,
+  );
+  await asUser(alice);
 });
 test("deposits and transfers preserve ledger totals and prevent overdrafts", async () => {
   await asUser(alice);
@@ -89,7 +240,11 @@ test("deposits and transfers preserve ledger totals and prevent overdrafts", asy
   assert.equal(balance(after, gid), 25000);
   await assert.rejects(
     () =>
-      cmd("transfer", { goal_id: gid, amount: 100000, direction: "to_goal" }),
+      cmd("transfer", {
+        goal_id: gid,
+        amount: total(after) + 1,
+        direction: "to_goal",
+      }),
     /overdraw/i,
   );
   assert.equal(total(await snapshot()), total(after));

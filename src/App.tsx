@@ -29,6 +29,7 @@ import {
   X,
   AlertCircle,
   History,
+  CreditCard,
   Undo2,
 } from "lucide-react";
 import type { Goal, Snapshot } from "./types";
@@ -54,11 +55,23 @@ import {
 } from "./components";
 import { GoalForm, MoneyForm, SettingsForm, type SaveCommand } from "./forms";
 import Chart from "./Chart";
+import IncomeOverview from "./IncomeOverview";
+import Purchases, { PurchaseForm } from "./Purchases";
 import GoalDetail from "./GoalDetail";
 
-type Page = "overview" | "goals" | "bank" | "history" | "settings";
+type Page =
+  | "overview"
+  | "goals"
+  | "bank"
+  | "purchases"
+  | "history"
+  | "settings";
 type DialogState = {
   kind:
+    | "purchase_create"
+    | "purchase_edit"
+    | "purchase_pay"
+    | "purchase_cancel"
     | "create"
     | "detail"
     | "edit"
@@ -75,6 +88,7 @@ const pages = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "goals", label: "My goals", icon: Target },
   { id: "bank", label: "Bank", icon: Wallet },
+  { id: "purchases", label: "Purchases", icon: CreditCard },
   { id: "history", label: "History", icon: History },
   { id: "settings", label: "Settings", icon: Settings },
 ] as const;
@@ -341,26 +355,30 @@ function GoalCard({
           <strong>
             {goal.status !== "active"
               ? "History preserved"
-              : p.funded
-                ? stretch
-                  ? money(
-                      plan(stretch, balance, today(data.settings.timezone))
-                        .weekly,
-                      currency,
-                    )
-                  : "Ready to acquire"
-                : p.daysLeft <= 0
-                  ? "Past due date"
-                  : money(p.weekly, currency)}
+              : p.status === "Scheduled"
+                ? dateLabel(goal.start_date, true)
+                : p.funded
+                  ? stretch
+                    ? money(
+                        plan(stretch, balance, today(data.settings.timezone))
+                          .weekly,
+                        currency,
+                      )
+                    : "Ready to acquire"
+                  : p.daysLeft <= 0
+                    ? "Past due date"
+                    : money(p.weekly, currency)}
           </strong>
           <span>
             {goal.status !== "active"
               ? "View this goal’s story"
-              : p.funded
-                ? stretch
-                  ? "/ week to next milestone"
-                  : "You made it happen"
-                : "/ week from today"}
+              : p.status === "Scheduled"
+                ? "Saving starts then"
+                : p.funded
+                  ? stretch
+                    ? "/ week to next milestone"
+                    : "You made it happen"
+                  : "/ week from today"}
           </span>
         </div>
         <button
@@ -369,6 +387,12 @@ function GoalCard({
             goal.status === "active"
               ? `Add savings to ${goal.name}`
               : `View ${goal.name}`
+          }
+          disabled={goal.status === "active" && p.status === "Scheduled"}
+          title={
+            p.status === "Scheduled"
+              ? `Saving starts ${dateLabel(goal.start_date)}`
+              : undefined
           }
           onClick={onDeposit}
         >
@@ -692,7 +716,7 @@ export default function App() {
     bank = bankBalance(data);
   const requirement = requiredWeekly(
       data.goals,
-      data.milestones,
+      data.milestones.filter((m) => m.is_primary),
       balances,
       now,
     ),
@@ -716,21 +740,25 @@ export default function App() {
         : "Your next chapter starts here."
       : page === "goals"
         ? "Good things take a little planning."
-        : page === "bank"
-          ? "A little room for possibility."
-          : page === "history"
-            ? "Look how far you’ve come."
-            : "A plan that fits your life.";
+        : page === "purchases"
+          ? "Make room for everyday life."
+          : page === "bank"
+            ? "A little room for possibility."
+            : page === "history"
+              ? "Look how far you’ve come."
+              : "A plan that fits your life.";
   const subheading =
     page === "overview"
       ? "Every little bit adds up. Here’s where you stand."
       : page === "goals"
         ? "Give what matters a place in your plans."
-        : page === "bank"
-          ? "Your unallocated savings, ready for whatever comes next."
-          : page === "history"
-            ? "Every contribution, every decision, every milestone."
-            : "Set your pace. We’ll help you keep it realistic.";
+        : page === "purchases"
+          ? "Know what you owe, and when it needs a place in your budget."
+          : page === "bank"
+            ? "Your unallocated savings, ready for whatever comes next."
+            : page === "history"
+              ? "Every contribution, every decision, every milestone."
+              : "Set your pace. We’ll help you keep it realistic.";
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -839,11 +867,13 @@ export default function App() {
                   ? "THE BIG PICTURE"
                   : page === "goals"
                     ? "SOMETHING TO LOOK FORWARD TO"
-                    : page === "bank"
-                      ? "YOUR EVERYDAY RESERVE"
-                      : page === "history"
-                        ? "EVERY STEP COUNTS"
-                        : "MAKE IT YOURS"}
+                    : page === "purchases"
+                      ? "EVERYDAY SPENDING"
+                      : page === "bank"
+                        ? "YOUR EVERYDAY RESERVE"
+                        : page === "history"
+                          ? "EVERY STEP COUNTS"
+                          : "MAKE IT YOURS"}
               </p>
               <h1>{heading}</h1>
               <p>{subheading}</p>
@@ -852,11 +882,22 @@ export default function App() {
               <button
                 className="button primary"
                 onClick={() =>
-                  setDialog({ kind: page === "bank" ? "deposit" : "create" })
+                  setDialog({
+                    kind:
+                      page === "purchases"
+                        ? "purchase_create"
+                        : page === "bank"
+                          ? "deposit"
+                          : "create",
+                  })
                 }
               >
                 <Plus size={17} />
-                {page === "bank" ? "Add savings" : "New goal"}
+                {page === "purchases"
+                  ? "Add purchase"
+                  : page === "bank"
+                    ? "Add savings"
+                    : "New goal"}
               </button>
             )}
           </div>
@@ -902,24 +943,25 @@ export default function App() {
               />
             </div>
           )}
+          {page === "purchases" && (
+            <Purchases
+              data={data}
+              onAction={(kind, id) => setDialog({ kind, id })}
+            />
+          )}
           {page === "overview" && (
             <>
+              <IncomeOverview
+                data={data}
+                onSettings={() => setPage("settings")}
+                onPurchases={() => setPage("purchases")}
+              />
               <div className="overview-grid">
                 <section className="panel chart-panel">
                   <div className="panel-header">
                     <div>
                       <h2>Your savings, taking shape</h2>
                       <p>Today’s small steps. Tomorrow’s possibilities.</p>
-                    </div>
-                    <div className="chart-legend">
-                      <span>
-                        <i />
-                        Saved
-                      </span>
-                      <span>
-                        <i />
-                        Planned
-                      </span>
                     </div>
                   </div>
                   <Chart data={data} />
@@ -934,8 +976,8 @@ export default function App() {
                     <span>per week</span>
                   </h2>
                   <p>
-                    To keep your upcoming milestones within reach, across all
-                    goals.
+                    Peak pace for main milestones across your goals, including
+                    future starts. Stretch milestones stay optional.
                   </p>
                   <div className="pace-divider" />
                   {limit ? (
@@ -1230,7 +1272,7 @@ export default function App() {
                 </button>
                 <p className="fine-print">
                   Export includes your balances, transaction entries, goals,
-                  milestones, and previous plans.
+                  milestones, purchases, income settings and previous plans.
                 </p>
               </aside>
             </div>
@@ -1263,25 +1305,33 @@ export default function App() {
       {dialog && (
         <Modal
           title={
-            dialog.kind === "create"
-              ? "Something to look forward to."
-              : dialog.kind === "detail"
-                ? selected?.name || "Your goal"
-                : dialog.kind === "edit"
-                  ? "Find a new pace."
-                  : dialog.kind === "deposit"
-                    ? "A little closer."
-                    : dialog.kind === "transfer"
-                      ? "Give your savings a direction."
-                      : dialog.kind === "spend"
-                        ? "Record a little of life."
-                        : dialog.kind === "acquire"
-                          ? "Make it yours."
-                          : dialog.kind === "reverse"
-                            ? "Correct this entry?"
-                            : dialog.kind === "archive"
-                              ? "Make room for a new plan?"
-                              : "A little guidance."
+            dialog.kind === "purchase_create"
+              ? "Plan for a purchase."
+              : dialog.kind === "purchase_edit"
+                ? "Update this purchase."
+                : dialog.kind === "purchase_pay"
+                  ? "Record a payment."
+                  : dialog.kind === "purchase_cancel"
+                    ? "Cancel this purchase?"
+                    : dialog.kind === "create"
+                      ? "Something to look forward to."
+                      : dialog.kind === "detail"
+                        ? selected?.name || "Your goal"
+                        : dialog.kind === "edit"
+                          ? "Find a new pace."
+                          : dialog.kind === "deposit"
+                            ? "A little closer."
+                            : dialog.kind === "transfer"
+                              ? "Give your savings a direction."
+                              : dialog.kind === "spend"
+                                ? "Record a little of life."
+                                : dialog.kind === "acquire"
+                                  ? "Make it yours."
+                                  : dialog.kind === "reverse"
+                                    ? "Correct this entry?"
+                                    : dialog.kind === "archive"
+                                      ? "Make room for a new plan?"
+                                      : "A little guidance."
           }
           eyebrow={
             dialog.kind === "detail"
@@ -1290,6 +1340,14 @@ export default function App() {
           }
           onClose={closeDialog}
         >
+          {dialog.kind.startsWith("purchase_") && (
+            <PurchaseForm
+              data={data}
+              purchase={data.purchases?.find((p) => p.id === dialog.id)}
+              mode={dialog.kind as import("./Purchases").PurchaseAction}
+              save={save}
+            />
+          )}
           {dialog.kind === "create" && <GoalForm data={data} save={save} />}
           {dialog.kind === "edit" && selected && (
             <GoalForm data={data} goal={selected} save={save} />
@@ -1340,8 +1398,10 @@ export default function App() {
               <p>
                 Set an hourly rate and weekly savings budget in Settings. The
                 combined plan counts each goal’s balance once, even when it has
-                several milestones. Estimates do not include taxes, expenses,
-                interest, or investment returns.
+                several milestones. The overview estimates take-home pay using
+                your income settings, then subtracts main savings and upcoming
+                unpaid purchases. Living expenses, interest and investment
+                returns are not included.
               </p>
             </div>
           )}

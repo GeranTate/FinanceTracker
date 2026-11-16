@@ -1,3 +1,11 @@
+export type IncomeSettings = {
+  mode: "georgia_2026" | "actual";
+  filing_status: "single" | "married_joint" | "head_household";
+  retirement_weekly: number;
+  benefits_weekly: number;
+  post_tax_weekly: number;
+  actual_net_monthly: number | null;
+};
 export type Settings = {
   user_id: string;
   display_name: string;
@@ -7,6 +15,7 @@ export type Settings = {
   rate_type: "gross" | "take_home";
   weekly_hours: number | null;
   weekly_budget: number | null;
+  income_settings?: IncomeSettings;
 };
 export type Goal = {
   id: string;
@@ -46,6 +55,19 @@ export type Transaction = {
   created_at: string;
   note: string;
   reversal_of: string | null;
+  purchase_id?: string | null;
+};
+export type Purchase = {
+  id: string;
+  user_id: string;
+  name: string;
+  card: string;
+  amount: number;
+  purchased_on: string;
+  due_date: string;
+  notes: string;
+  status: "active" | "cancelled";
+  created_at: string;
 };
 export type Entry = {
   id: string;
@@ -61,5 +83,6 @@ export type Snapshot = {
   accounts: Account[];
   transactions: Transaction[];
   entries: Entry[];
+  purchases?: Purchase[];
 };
 export type CommandPayload = Record<string, unknown>;

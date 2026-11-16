@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { AlertCircle, ArrowRight, Check, Plus, Trash2 } from "lucide-react";
+import IncomeFields, { incomeDraft, parseIncomeDraft } from "./IncomeFields";
 import type { CommandPayload, Goal, Snapshot } from "./types";
 import {
   addDays,
@@ -17,7 +18,7 @@ export type SaveCommand = (
   payload: CommandPayload,
   id: string,
 ) => Promise<void>;
-function useSubmit(save: SaveCommand) {
+export function useSubmit(save: SaveCommand) {
   const id = useRef(crypto.randomUUID()),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -35,7 +36,7 @@ function useSubmit(save: SaveCommand) {
   }
   return { submit, busy, error };
 }
-function ErrorMessage({ error }: { error: string }) {
+export function ErrorMessage({ error }: { error: string }) {
   return error ? (
     <div className="form-error" role="alert">
       <AlertCircle size={17} />
@@ -43,16 +44,18 @@ function ErrorMessage({ error }: { error: string }) {
     </div>
   ) : null;
 }
-function AmountInput({
+export function AmountInput({
   label,
   value,
   onChange,
   required = true,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label>
@@ -63,6 +66,7 @@ function AmountInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
+        disabled={disabled}
       />
     </label>
   );
@@ -89,7 +93,7 @@ export function GoalForm({
     [description, setDescription] = useState(goal?.description || "");
   const [category, setCategory] = useState(goal?.category || "Other"),
     [color, setColor] = useState(goal?.color || "sage");
-  const [start, setStart] = useState(now),
+  const [start, setStart] = useState(goal?.start_date || now),
     [opening, setOpening] = useState("0"),
     [source, setSource] = useState("new");
   const [rows, setRows] = useState(
@@ -114,7 +118,12 @@ export function GoalForm({
     setRows(
       rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)),
     );
-  const balance = goal ? goalBalance(data, goal.id) : safeMoney(opening);
+  const scheduled = start > now;
+  const balance = goal
+    ? goalBalance(data, goal.id)
+    : scheduled
+      ? 0
+      : safeMoney(opening);
   const draftMilestones = rows
     .filter((r) => r.target && r.due_date)
     .map((r, i) => ({
@@ -122,32 +131,38 @@ export function GoalForm({
       id: "draft-" + i,
       user_id: data.settings.user_id,
       goal_id: goal?.id || "draft",
-      baseline_date: goal ? now : start,
+      baseline_date: goal && !scheduled ? now : start,
       baseline_balance: balance,
       target: safeMoney(r.target),
     }));
   const primary = draftMilestones.find((m) => m.is_primary),
-    weekly = primary ? plan(primary, balance, now).weekly : 0;
+    weekly = primary
+      ? scheduled
+        ? plan(primary, balance, now).originalWeekly
+        : plan(primary, balance, now).weekly
+      : 0;
   const limit = capacity(data.settings);
-  const draftGoal = goal || {
-    id: "draft",
-    user_id: data.settings.user_id,
-    name,
-    description,
-    category,
-    color,
-    start_date: start,
-    status: "active" as const,
-    created_at: now,
-    actual_cost: null,
-    acquired_on: null,
-  };
+  const draftGoal = goal
+    ? { ...goal, start_date: start }
+    : {
+        id: "draft",
+        user_id: data.settings.user_id,
+        name,
+        description,
+        category,
+        color,
+        start_date: start,
+        status: "active" as const,
+        created_at: now,
+        actual_cost: null,
+        acquired_on: null,
+      };
   const otherGoals = data.goals.filter((g) => g.id !== goal?.id);
   const combined = requiredWeekly(
     [...otherGoals, draftGoal],
     [
-      ...data.milestones.filter((m) => m.goal_id !== goal?.id),
-      ...draftMilestones,
+      ...data.milestones.filter((m) => m.goal_id !== goal?.id && m.is_primary),
+      ...draftMilestones.filter((m) => m.is_primary),
     ],
     {
       ...Object.fromEntries(
@@ -166,7 +181,7 @@ export function GoalForm({
       category,
       color,
       start_date: start,
-      opening: parseMoney(opening),
+      opening: scheduled ? 0 : parseMoney(opening),
       opening_source: source,
       milestones: rows.map((r) => ({ ...r, target: parseMoney(r.target) })),
     }));
@@ -224,44 +239,47 @@ export function GoalForm({
           </select>
         </label>
       </div>
-      {!goal && (
-        <>
-          <div className="form-grid">
-            <label>
-              Start date
-              <input
-                type="date"
-                min="2000-01-01"
-                max={now}
-                required
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-              />
-            </label>
-            <AmountInput
-              label={`Already saved (${data.settings.currency})`}
-              value={opening}
-              onChange={setOpening}
-            />
-          </div>
-          {safeMoney(opening) > 0 && (
-            <label>
-              Where is this money coming from?
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-              >
-                <option value="new">
-                  Savings not yet recorded in the tracker
-                </option>
-                <option value="bank">
-                  Transfer from Bank (
-                  {money(bankBalance(data), data.settings.currency)})
-                </option>
-              </select>
-            </label>
-          )}
-        </>
+      <div className="form-grid">
+        <label>
+          Start date
+          <input
+            type="date"
+            min="2000-01-01"
+            max={addDays(now, 36525)}
+            required
+            value={start}
+            disabled={Boolean(goal && goal.start_date <= now)}
+            onChange={(e) => {
+              setStart(e.target.value);
+              if (e.target.value > now) setOpening("0");
+            }}
+          />
+        </label>
+        {!goal && !scheduled && (
+          <AmountInput
+            label={`Already saved (${data.settings.currency})`}
+            value={opening}
+            onChange={setOpening}
+          />
+        )}
+      </div>
+      {scheduled && (
+        <p className="form-note">
+          Scheduled for {start}. You can add savings or transfer money into this
+          goal once it starts. It won’t reduce your current income forecast.
+        </p>
+      )}
+      {!goal && !scheduled && safeMoney(opening) > 0 && (
+        <label>
+          Where is this money coming from?
+          <select value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="new">Savings not yet recorded in the tracker</option>
+            <option value="bank">
+              Transfer from Bank (
+              {money(bankBalance(data), data.settings.currency)})
+            </option>
+          </select>
+        </label>
       )}
       <div className="section-label">
         <h3>Milestones</h3>
@@ -291,7 +309,7 @@ export function GoalForm({
               Goal date
               <input
                 type="date"
-                min={addDays(now, 1)}
+                min={addDays(start > now ? start : now, 1)}
                 max={addDays(now, 36525)}
                 required
                 value={row.due_date}
@@ -353,10 +371,15 @@ export function GoalForm({
         <div
           className={`plan-callout ${limit && combined.weekly > limit.amount ? "warning" : ""}`}
         >
-          <span className="eyebrow">Your savings pace</span>
+          <span className="eyebrow">
+            {scheduled ? "Savings pace once started" : "Your savings pace"}
+          </span>
           <strong>
             {money(weekly, data.settings.currency)}
-            <small> / week toward the main milestone</small>
+            <small>
+              {" "}
+              / week {scheduled ? "once started" : "toward the main milestone"}
+            </small>
           </strong>
           {data.settings.hourly_rate > 0 && (
             <p>
@@ -367,14 +390,14 @@ export function GoalForm({
           {limit && combined.weekly > limit.amount ? (
             <p>
               <AlertCircle size={15} />
-              All goals together need{" "}
+              All main milestones together need{" "}
               {money(combined.weekly, data.settings.currency)} / week, above
               your {limit.label}. You can still keep this goal.
             </p>
           ) : (
             <p>
               {limit
-                ? `Your combined plan needs ${money(combined.weekly, data.settings.currency)} / week.`
+                ? `Your combined main plan needs ${money(combined.weekly, data.settings.currency)} / week.`
                 : "Set a weekly savings budget in Settings to check affordability."}
             </p>
           )}
@@ -382,8 +405,8 @@ export function GoalForm({
       )}
       {goal && (
         <p className="fine-print">
-          Saving starts a new plan from today’s balance. Your previous plan is
-          kept in history.
+          Saving updates your plan from today’s balance (or its future start
+          date). Your previous plan is kept in history.
         </p>
       )}
       <ErrorMessage error={error} />
@@ -422,12 +445,15 @@ export function MoneyForm({
       (m) => m.goal_id === selected && m.is_primary,
     );
   const funded = Boolean(primary && saved >= primary.target);
+  const scheduled = Boolean(goal && goal.start_date > now);
   return (
     <form
       className="form-stack"
       onSubmit={(e) => {
         e.preventDefault();
         void submit(mode, () => {
+          if (scheduled)
+            throw new Error("Saving opens on the goal’s start date.");
           if (mode === "acquire" && !confirmed)
             throw new Error("Confirm the purchase details before saving.");
           return {
@@ -459,8 +485,9 @@ export function MoneyForm({
             {data.goals
               .filter((g) => g.status === "active")
               .map((g) => (
-                <option key={g.id} value={g.id}>
+                <option key={g.id} value={g.id} disabled={g.start_date > now}>
                   {g.name}
+                  {g.start_date > now ? ` · starts ${g.start_date}` : ""}
                 </option>
               ))}
           </select>
@@ -580,6 +607,7 @@ export function MoneyForm({
         className="button primary full"
         disabled={
           busy ||
+          scheduled ||
           (mode === "acquire" &&
             (!funded || !confirmed || price > bank + saved))
         }
@@ -606,6 +634,7 @@ export function SettingsForm({
   save: SaveCommand;
 }) {
   const s = data.settings;
+  const [income, setIncome] = useState(() => incomeDraft(s));
   const [name, setName] = useState(s.display_name),
     [currency, setCurrency] = useState(s.currency),
     [timezone, setTimezone] = useState(s.timezone);
@@ -631,6 +660,7 @@ export function SettingsForm({
           rate_type: rateType,
           weekly_hours: hours === "" ? null : Number(hours),
           weekly_budget: budget === "" ? null : parseMoney(budget),
+          income_settings: parseIncomeDraft(income),
         }));
       }}
     >
@@ -717,6 +747,17 @@ export function SettingsForm({
           placeholder="40"
         />
       </label>
+      <IncomeFields
+        draft={income}
+        setDraft={setIncome}
+        settings={{
+          ...s,
+          currency,
+          hourly_rate: safeMoney(rate),
+          rate_type: rateType,
+          weekly_hours: hours === "" ? null : Number(hours),
+        }}
+      />
       <AmountInput
         label={`Weekly savings budget (${currency}, optional)`}
         value={budget}
@@ -724,9 +765,9 @@ export function SettingsForm({
         required={false}
       />
       <p className="form-note">
-        We compare all your goals against this budget. Leave it blank to use
-        your weekly income as a rough ceiling. We don’t estimate taxes or living
-        expenses.
+        We compare your main goal plans against this budget. Leave it blank to
+        use estimated weekly take-home pay as a ceiling. Living expenses are not
+        included; optional stretch targets are tracked separately.
       </p>
       <ErrorMessage error={error} />
       <button className="button primary align-left" disabled={busy}>

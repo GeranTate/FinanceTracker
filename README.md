@@ -26,7 +26,9 @@ The development sign-in page includes a **read-only sample-data demo**. Demo dat
 
 The initial migration is [supabase/migrations/20261112213024_initial_finance_tracker.sql](supabase/migrations/20261112213024_initial_finance_tracker.sql). It was applied to the linked Supabase project through the SQL Editor on November 12, 2026. **Do not run it a second time on that project.**
 
-For a new empty project, run that file once in its SQL Editor as postgres. It runs in one transaction and creates:
+The additive `20261116165156_income_purchases_and_scheduled_goals.sql` migration adds income settings, owner-only purchases, payment links and scheduled-goal rules. It was applied to the live project on November 16, 2026. **Do not replay it there.** It preserves existing savings and transaction records.
+
+For a new empty project, run each migration in filename order once in its SQL Editor as postgres. It runs in one transaction and creates:
 
 - Profiles/settings, goals, milestones, previous plans, accounts, transaction headers, and signed ledger entries.
 - Owner-only SELECT policies with RLS on every exposed table.
@@ -60,24 +62,32 @@ Password reset uses Supabase email delivery. Allow the local URL http://127.0.0.
 - Goals have one main milestone and optional intermediate/stretch milestones, all sharing one balance. Cumulative targets and dates increase together.
 - Starting savings come from untracked cash or Bank. Moving Bank money does not count as new savings.
 - Original weekly/monthly plans stay fixed. Catch-up schedules recalculate from today. Calendar months, partial periods, and exact-cent installment rounding are supported.
-- Status compares saved money with the original baseline. Past deadlines show overdue.
+- Status compares saved money with the original baseline. Past deadlines show overdue. Charts compare main and stretch schedules separately; cumulative milestones share a balance.
+- Future-start goals are scheduled with zero opening savings. Deposits/transfers are blocked until their start date, and they do not reduce the current income forecast. Scheduled plans can be edited or archived.
 - Settings include hourly rate, gross/take-home designation, optional weekly hours, and an optional weekly savings budget.
 - Combined feasibility checks count cumulative milestones once and evaluate requirements at each deadline.
 - Bank holds unallocated money. Unassigned spending reduces Bank.
+- Purchases record the item, amount, optional card label, purchase date and payment due date. Unpaid balances due by the next week/month, including overdue balances, reduce the income forecast. Recording partial/full payments reduces Bank and the outstanding balance atomically; reversing the payment restores both. No actual bank/card payments are sent. Interest and fees must be entered manually.
 - Acquisition requires a funded main milestone. The actual cost leaves the tracker, surplus returns to Bank, and a shortfall comes from Bank. Negative balances are blocked.
 - Acquisition closes the whole goal, including stretch milestones, while preserving history.
 - Editing a plan creates a new baseline at today's balance and preserves the previous plan in the export.
 - Corrections append reversals on the original date. Dated overdrafts are rejected. Transactions involving closed goals and acquisitions cannot be reversed through the UI.
 - Empty goals can be archived. JSON export includes transactions, goals, milestones, settings, and previous plans.
 
-The overview separates goal savings, Bank, and total tracked cash. Acquired purchases are not current savings. Currency stays fixed after recording money. The app does not perform currency conversion or estimate taxes, expenses, interest, or investment returns.
+The overview separates goal savings, Bank, and total tracked cash. Acquired purchases are not current savings. Currency stays fixed after recording money. The app does not perform currency conversion or estimate living expenses, interest, or investment returns.
+
+The overview shows estimated take-home minus required contributions to all current main milestones minus upcoming unpaid purchases. Monthly income is annual income / 12; monthly goal pace is daily catch-up × 7 × 52 / 12, capped at remaining savings. Overdue targets reserve their full remainder. Stretch targets are optional. This is an income forecast before living expenses, not the Bank balance. Paid purchase obligations are no longer reserved in the forecast; their cash outflow remains in Bank.
+
+Settings default to **US / Georgia, single, tax year 2026**. The wage estimator includes progressive federal tax and standard deductions, Georgia’s 4.99% income tax with a $15,000 single/head-of-household or $30,000 joint standard deduction, employee Social Security (6.2%, $184,500 wage base), Medicare and Additional Medicare. Traditional workplace retirement reduces income taxes; Section 125 health benefits also reduce FICA. Other post-tax deductions reduce net pay. Users may instead enter actual monthly take-home; hourly take-home rates are not taxed again. Other household income, credits, dependents, itemizing, special deductions and self-employment are excluded. The explicitly labeled 2026 tables need annual review; no future-year accuracy is implied.
+
+Sources checked November 16, 2026: [IRS 2026 brackets and standard deductions](https://www.irs.gov/pub/irs-drop/rp-25-32.pdf), [Georgia DOR tax updates](https://dor.georgia.gov/taxes/important-tax-updates), [SSA wage base](https://www.ssa.gov/OACT/COLA/cbb.html), [IRS Additional Medicare](https://www.irs.gov/taxtopics/tc560).
 
 ## Verification
 
     npm test
     npm run build
 
-Tests apply the actual migration to embedded PostgreSQL (PGlite), using two simulated authenticated identities. They cover transfers, acquisitions above/below savings, overdrafts, retries, reversals, owner isolation, direct-write restrictions, plan history, calendar boundaries, and shared milestones.
+Tests apply all actual migrations to embedded PostgreSQL (PGlite), using two simulated authenticated identities. They cover transfers, acquisitions above/below savings, overdrafts, retries, reversals, owner isolation, direct-write restrictions, plan history, calendar boundaries, shared milestones, tax cases, future starts and purchase payment reconciliation.
 
 Live checks:
 
@@ -87,7 +97,7 @@ Live checks:
 
       ./node_modules/.bin/node --env-file=.env.local scripts/check-connection.mjs
 
-The live smoke test and unauthenticated API checks passed on November 12, 2026. Tests validate sequential operations and SQL locking is present; a true simultaneous multi-connection load test has not been performed.
+The expanded live rollback smoke test passed on November 16, 2026, including income settings, future goal restrictions, purchase payments/reversals and owner isolation. Tests validate sequential operations and SQL locking is present; a true simultaneous multi-connection load test has not been performed.
 
 ## Hosting later
 

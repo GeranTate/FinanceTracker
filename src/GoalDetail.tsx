@@ -1,3 +1,4 @@
+import Chart from "./Chart";
 import { useState } from "react";
 import {
   ArrowDownLeft,
@@ -38,12 +39,17 @@ export default function GoalDetail({
     balance = goalBalance(data, goal.id),
     currency = data.settings.currency;
   const now = today(data.settings.timezone),
-    p = plan(m, balance, now);
+    p = plan(m, balance, now),
+    scheduled = goal.start_date > now;
   const schedule = installments(
     scheduleType === "catchup"
       ? p.remaining
       : Math.max(0, m.target - m.baseline_balance),
-    scheduleType === "catchup" ? now : m.baseline_date,
+    scheduleType === "catchup"
+      ? scheduled
+        ? goal.start_date
+        : now
+      : m.baseline_date,
     m.due_date,
     cadence,
   );
@@ -82,9 +88,16 @@ export default function GoalDetail({
             </span>
             <Status value={p.status} />
           </div>
+          {scheduled && (
+            <p className="form-note">
+              Scheduled for {dateLabel(goal.start_date)}. You can edit the plan
+              now; adding savings and transfers opens on that date.
+            </p>
+          )}
           <div className="detail-actions">
             <button
               className="button primary"
+              disabled={scheduled}
               onClick={() => onAction("deposit", goal.id)}
             >
               <ArrowDownLeft size={16} />
@@ -92,6 +105,7 @@ export default function GoalDetail({
             </button>
             <button
               className="button secondary"
+              disabled={scheduled}
               onClick={() => onAction("transfer", goal.id)}
             >
               <ArrowRightLeft size={16} />
@@ -151,20 +165,24 @@ export default function GoalDetail({
               <strong>{money(p.remaining, currency)}</strong>
             </div>
             <div>
-              <span>Needed per week</span>
+              <span>
+                {scheduled ? "Per week once started" : "Needed per week"}
+              </span>
               <strong>
                 {p.daysLeft <= 0 && !p.funded
                   ? "Overdue"
-                  : money(p.weekly, currency)}
+                  : money(scheduled ? p.originalWeekly : p.weekly, currency)}
               </strong>
             </div>
           </div>
           <p
             className={`schedule-note ${p.difference < -1 ? "behind-text" : ""}`}
           >
-            {p.funded
-              ? "This milestone is fully funded. Keep going or make it yours."
-              : `${money(Math.abs(p.difference), currency)} ${p.difference < -1 ? "behind" : p.difference > 1 ? "ahead of" : "from"} the original plan. Expected by today: ${money(p.expected, currency)}.`}
+            {scheduled
+              ? `Savings begin ${dateLabel(goal.start_date)}. This goal is not deducted from your current income forecast.`
+              : p.funded
+                ? "This milestone is fully funded. Keep going or make it yours."
+                : `${money(Math.abs(p.difference), currency)} ${p.difference < -1 ? "behind" : p.difference > 1 ? "ahead of" : "from"} the original plan. Expected by today: ${money(p.expected, currency)}.`}
           </p>
           <div className="schedule-controls">
             <div className="segmented">
@@ -172,7 +190,7 @@ export default function GoalDetail({
                 className={scheduleType === "catchup" ? "selected" : ""}
                 onClick={() => setScheduleType("catchup")}
               >
-                From today
+                {scheduled ? "From start date" : "From today"}
               </button>
               <button
                 className={scheduleType === "original" ? "selected" : ""}
@@ -231,10 +249,15 @@ export default function GoalDetail({
                 : "This date has passed. Edit the plan to set a new deadline."}
             </p>
           )}
+          <details className="income-assumptions goal-chart">
+            <summary>Compare main and stretch progress</summary>
+            <Chart data={data} goalId={goal.id} />
+          </details>
           <div className="detail-footer">
             <button
               className="button primary"
               disabled={
+                scheduled ||
                 balance < (rows.find((m) => m.is_primary)?.target || Infinity)
               }
               onClick={() => onAction("acquire", goal.id)}

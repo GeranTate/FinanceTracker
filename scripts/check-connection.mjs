@@ -7,6 +7,7 @@ if (!url || !key)
   );
 for (const path of [
   "/rest/v1/profiles?select=user_id",
+  "/rest/v1/purchases?select=id",
   "/rest/v1/rpc/finance_snapshot",
 ]) {
   const response = await fetch(url + path, {

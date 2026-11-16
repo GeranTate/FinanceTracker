@@ -115,6 +115,32 @@ export function makeDemo(): Snapshot {
         reversal_of: null,
       })),
     ],
+    purchases: [
+      {
+        id: "desk",
+        user_id: uid,
+        name: "A desk for the home office",
+        card: "Everyday Visa",
+        amount: 32900,
+        purchased_on: addDays(now, -4),
+        due_date: addDays(now, 18),
+        notes: "A little room to focus.",
+        status: "active",
+        created_at: now,
+      },
+      {
+        id: "groceries",
+        user_id: uid,
+        name: "Weekly groceries",
+        card: "Everyday Visa",
+        amount: 8750,
+        purchased_on: addDays(now, -10),
+        due_date: addDays(now, -1),
+        notes: "",
+        status: "active",
+        created_at: now,
+      },
+    ],
     entries: [
       {
         id: "bank",
