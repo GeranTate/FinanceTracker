@@ -50,8 +50,8 @@ export function bankReserves(data: Snapshot, on: string) {
   let credit = 0,
     subscriptionCredit = 0;
   for (const p of data.purchases || []) {
+    credit += purchaseBalance(data,p.id);
     if (p.subscription_id) subscriptionCredit += purchaseBalance(data, p.id);
-    else credit += purchaseBalance(data, p.id);
   }
   const end = nextMonth(on),
     upcoming = upcomingSubscriptions(data, on, end).reduce(
@@ -59,7 +59,7 @@ export function bankReserves(data: Snapshot, on: string) {
       0,
     );
   const bank = bankBalance(data),
-    subscriptions = subscriptionCredit + upcoming;
+    subscriptions = upcoming;
   return {
     bank,
     credit,

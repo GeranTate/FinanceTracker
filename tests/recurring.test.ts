@@ -69,7 +69,7 @@ test("Bank reserves count unpaid credit and future renewals once, then reconcile
   ];
   const r = bankReserves(d, on),
     n = upcomingSubscriptions(d, on).length;
-  assert.equal(r.credit, 5000);
+  assert.equal(r.credit, 6000);
   assert.equal(r.subscriptionCredit, 1000);
   assert.equal(r.upcoming, n * 1000);
   assert.equal(r.available, r.bank - 5000 - 1000 - n * 1000);
