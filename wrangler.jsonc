@@ -1,0 +1,14 @@
+{
+  "name": "financetracker",
+  "compatibility_date": "2026-11-16",
+  "routes": [
+    {
+      "pattern": "mypersonalfinancetracker.com",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
