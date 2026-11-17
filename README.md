@@ -124,3 +124,13 @@ Bank shows total cash, cash minus all unpaid credit purchases (including issued 
 Optional Bank minimum/maximum amounts are advisory, compared against cash after commitments. Purchase and spending forms flag crossing the minimum; ledger actions remain allowed as long as actual Bank cash is sufficient.
 
 The overview retains the combined savings chart and also shows a chart for each active goal. Individual charts use a solid blue main-target plan, a separately labeled dotted line for each secondary/stretch milestone, and green recorded savings. The same individual milestone lines appear in goal details.
+
+## Pay periods and Emergency Fund
+
+Settings support weekly (weekday), every two weeks (known payday anchor), twice monthly (two days), or monthly (day) comparisons, with daily comparison retained until a schedule is chosen. Status and ahead/behind amounts compare saved balances with the original linear plan at the latest payday on or before today, bounded by the plan’s starting baseline. On payday the contribution is due; between paydays the expected amount stays fixed. Month-end dates clamp to shorter months. A goal’s final deadline still requires its full target even between paydays. Chart paths and catch-up contribution calculations remain linear/daily.
+
+Emergency Fund is its own ledger account, excluded from Bank spending capacity, goal totals, charts and required main-milestone savings. Total tracked cash includes Bank + goals + Emergency Fund. The Emergency Fund page supports new deposits, transfers to/from Bank, an optional reserve target, and emergency expenses with a reason and confirmation. Cash and dated-overdraft protections apply. History supports corrections.
+
+Use **Emergency Fund → Move an existing goal** to transfer a goal’s entire balance into the reserve and archive that goal. No cash is created or spent; the former goal’s transactions and milestones remain in history/export. If no reserve target is set, its main target is copied. This is a deliberate one-time action; existing goals are not automatically reclassified.
+
+The additive `20261117215821_pay_periods_and_emergency_fund.sql` migration extends existing owner-only profiles/accounts and the command function. It does not introduce new data access grants. It was applied to the live project on November 17, 2026; do not replay it there. The rollback smoke test passed for pay settings, Emergency Fund accounting, goal conversion, cash preservation and owner isolation. For a new project, apply once after earlier migrations.

@@ -49,6 +49,14 @@ export function makeDemo(): Snapshot {
       weekly_hours: 40,
       weekly_budget: 65000,
       credit_due_day: 15,
+      pay_schedule: {
+        cadence: "weekly",
+        weekday: 5,
+        anchor_date: now,
+        day1: 1,
+        day2: 15,
+      },
+      emergency_target: 500000,
     },
     goals: goals.map((g) => ({
       id: g.id,
@@ -89,6 +97,7 @@ export function makeDemo(): Snapshot {
     ],
     accounts: [
       { id: "bank", user_id: uid, goal_id: null, kind: "bank" },
+      { id: "emergency", user_id: uid, goal_id: null, kind: "emergency" },
       ...goals.map((g) => ({
         id: g.id,
         user_id: uid,
@@ -97,6 +106,15 @@ export function makeDemo(): Snapshot {
       })),
     ],
     transactions: [
+      {
+        id: "emergency",
+        user_id: uid,
+        kind: "deposit",
+        effective_date: addDays(now, -10),
+        created_at: now,
+        note: "Emergency reserve savings",
+        reversal_of: null,
+      },
       {
         id: "bank",
         user_id: uid,
@@ -158,6 +176,13 @@ export function makeDemo(): Snapshot {
       },
     ],
     entries: [
+      {
+        id: "emergency",
+        user_id: uid,
+        transaction_id: "emergency",
+        account_id: "emergency",
+        amount: 150000,
+      },
       {
         id: "bank",
         user_id: uid,

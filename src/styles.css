@@ -3105,3 +3105,55 @@ select:disabled {
     margin-inline: 12px;
   }
 }
+
+.chart-period-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0 20px 12px;
+}
+.overview-cash.stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.emergency-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 24px;
+  margin: 0 0 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #eef3e9;
+}
+.emergency-intro p {
+  color: #617569;
+  font-size: 13px;
+  max-width: 850px;
+  margin-top: 8px;
+}
+@media (max-width: 1180px) {
+  .overview-cash.stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .bank-toolbar .button-row {
+    flex-wrap: wrap;
+  }
+  .emergency-intro {
+    padding: 20px;
+  }
+}
+@media (max-width: 540px) {
+  .overview-cash .stat:last-child {
+    grid-column: 1/-1;
+  }
+  .sidebar nav > button {
+    font-size: 7px;
+    line-height: 1.15;
+  }
+  .chart-period-note {
+    margin-inline: 12px;
+    font-size: 10px;
+  }
+}

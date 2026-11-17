@@ -1,6 +1,8 @@
 import { useRef, useState, type FormEvent } from "react";
 import { AlertCircle, ArrowRight, Check, Plus, Trash2 } from "lucide-react";
 import { bankReserves } from "./lib/recurring";
+import PayScheduleFields from "./PayScheduleFields";
+import { paySchedule } from "./lib/paySchedule";
 import IncomeFields, { incomeDraft, parseIncomeDraft } from "./IncomeFields";
 import type { CommandPayload, Goal, Snapshot } from "./types";
 import {
@@ -647,6 +649,7 @@ export function SettingsForm({
 }) {
   const s = data.settings;
   const [income, setIncome] = useState(() => incomeDraft(s));
+  const [pay, setPay] = useState(() => paySchedule(s));
   const [bankMin, setBankMin] = useState(
       s.bank_min == null ? "" : String(s.bank_min / 100),
     ),
@@ -682,6 +685,7 @@ export function SettingsForm({
           weekly_hours: hours === "" ? null : Number(hours),
           weekly_budget: budget === "" ? null : parseMoney(budget),
           income_settings: parseIncomeDraft(income),
+          pay_schedule: pay,
           credit_due_day: creditDay === "" ? null : Number(creditDay),
           bank_min: bankMin === "" ? null : parseMoney(bankMin),
           bank_max: bankMax === "" ? null : parseMoney(bankMax),
@@ -735,6 +739,7 @@ export function SettingsForm({
           consistent.
         </p>
       )}
+      <PayScheduleFields schedule={pay} setSchedule={setPay} settings={s} />
       <div className="settings-section">
         <h3>What’s a realistic pace?</h3>
         <p>

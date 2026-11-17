@@ -1,4 +1,10 @@
 import { useId } from "react";
+import {
+  statusExpectedSavings,
+  periodPlan,
+  paySchedule,
+  latestPayday,
+} from "./lib/paySchedule";
 import type { Snapshot } from "./types";
 import {
   accountBalance,
@@ -112,8 +118,8 @@ export default function Chart({
     .map((p, i) => `${i ? "L" : "M"}${x(p.date)},${y(p.actual)}`)
     .join(" ");
   const current = active.reduce((s, g) => s + goalBalance(data, g.id), 0);
-  const difference = current - expectedSavings(data, now),
-    stretchDifference = current - expectedSavings(data, now, true);
+  const difference = current - statusExpectedSavings(data, now),
+    stretchDifference = current - statusExpectedSavings(data, now, true);
   const pace = (difference: number) =>
     Math.abs(difference) <= 1
       ? "On track"
@@ -131,7 +137,9 @@ export default function Chart({
                 <strong>
                   {pace(
                     current -
-                      (now < m.baseline_date ? 0 : plan(m, 0, now).expected),
+                      (now < m.baseline_date
+                        ? 0
+                        : periodPlan(m, 0, now, data.settings).expected),
                   )}
                 </strong>
               </span>
@@ -142,6 +150,13 @@ export default function Chart({
               </span>
             )}
       </div>
+      {paySchedule(data.settings).cadence !== "daily" && (
+        <p className="chart-period-note">
+          Status through the latest payday,{" "}
+          {dateLabel(latestPayday(now, paySchedule(data.settings)), true)}.
+          Lines show the continuous daily plan; deadlines still apply.
+        </p>
+      )}
       <div className="chart-legend">
         <span>
           <i />

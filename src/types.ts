@@ -6,6 +6,13 @@ export type IncomeSettings = {
   post_tax_weekly: number;
   actual_net_monthly: number | null;
 };
+export type PaySchedule = {
+  cadence: "daily" | "weekly" | "biweekly" | "semimonthly" | "monthly";
+  weekday: number;
+  anchor_date: string;
+  day1: number;
+  day2: number;
+};
 export type Settings = {
   user_id: string;
   display_name: string;
@@ -19,6 +26,8 @@ export type Settings = {
   credit_due_day?: number | null;
   bank_min?: number | null;
   bank_max?: number | null;
+  pay_schedule?: PaySchedule;
+  emergency_target?: number | null;
 };
 export type Goal = {
   id: string;
@@ -48,7 +57,7 @@ export type Account = {
   id: string;
   user_id: string;
   goal_id: string | null;
-  kind: "bank" | "goal";
+  kind: "bank" | "goal" | "emergency";
 };
 export type Transaction = {
   id: string;

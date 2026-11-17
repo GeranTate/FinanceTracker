@@ -56,6 +56,11 @@ import {
 } from "./components";
 import { GoalForm, MoneyForm, SettingsForm, type SaveCommand } from "./forms";
 import Chart from "./Chart";
+import EmergencyFund, {
+  EmergencyForm,
+  emergencyBalance,
+} from "./EmergencyFund";
+import { periodPlan } from "./lib/paySchedule";
 import IncomeOverview from "./IncomeOverview";
 import Purchases, { PurchaseForm } from "./Purchases";
 import GoalDetail from "./GoalDetail";
@@ -65,6 +70,7 @@ import Subscriptions, { SubscriptionForm } from "./Subscriptions";
 type Page =
   | "overview"
   | "goals"
+  | "emergency"
   | "bank"
   | "subscriptions"
   | "purchases"
@@ -72,6 +78,11 @@ type Page =
   | "settings";
 type DialogState = {
   kind:
+    | "emergency_deposit"
+    | "emergency_transfer"
+    | "emergency_spend"
+    | "emergency_settings"
+    | "emergency_from_goal"
     | "subscription_create"
     | "subscription_edit"
     | "subscription_pause"
@@ -94,6 +105,7 @@ type DialogState = {
 const pages = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "goals", label: "My goals", icon: Target },
+  { id: "emergency", label: "Emergency Fund", icon: ShieldCheck },
   { id: "bank", label: "Bank", icon: Wallet },
   { id: "purchases", label: "Purchases", icon: CreditCard },
   { id: "subscriptions", label: "Subscriptions", icon: Repeat },
@@ -302,7 +314,7 @@ function GoalCard({
   const m = data.milestones.find((m) => m.goal_id === goal.id && m.is_primary);
   if (!m) return null;
   const balance = goalBalance(data, goal.id),
-    p = plan(m, balance, today(data.settings.timezone)),
+    p = periodPlan(m, balance, today(data.settings.timezone), data.settings),
     currency = data.settings.currency;
   const stretch = data.milestones
     .filter((m) => m.goal_id === goal.id && !m.is_primary && m.target > balance)
@@ -721,7 +733,8 @@ export default function App() {
       data.goals.map((g) => [g.id, goalBalance(data, g.id)]),
     ),
     saved = Object.values(balances).reduce((s, b) => s + b, 0),
-    bank = bankBalance(data);
+    bank = bankBalance(data),
+    emergency = emergencyBalance(data);
   const requirement = requiredWeekly(
       data.goals,
       data.milestones.filter((m) => m.is_primary),
@@ -732,7 +745,10 @@ export default function App() {
   const behind = active.filter((g) => {
     const m = data.milestones.find((m) => m.goal_id === g.id && m.is_primary);
     return (
-      m && ["Behind", "Overdue"].includes(plan(m, balances[g.id], now).status)
+      m &&
+      ["Behind", "Overdue"].includes(
+        periodPlan(m, balances[g.id], now, data.settings).status,
+      )
     );
   }).length;
   const selected = dialog?.id
@@ -746,31 +762,35 @@ export default function App() {
       ? data.settings.display_name
         ? `Your next chapter, ${data.settings.display_name}.`
         : "Your next chapter starts here."
-      : page === "goals"
-        ? "Good things take a little planning."
-        : page === "subscriptions"
-          ? "Keep recurring costs in view."
-          : page === "purchases"
-            ? "Make room for everyday life."
-            : page === "bank"
-              ? "A little room for possibility."
-              : page === "history"
-                ? "Look how far you’ve come."
-                : "A plan that fits your life.";
+      : page === "emergency"
+        ? "Ready for the unexpected."
+        : page === "goals"
+          ? "Good things take a little planning."
+          : page === "subscriptions"
+            ? "Keep recurring costs in view."
+            : page === "purchases"
+              ? "Make room for everyday life."
+              : page === "bank"
+                ? "A little room for possibility."
+                : page === "history"
+                  ? "Look how far you’ve come."
+                  : "A plan that fits your life.";
   const subheading =
     page === "overview"
       ? "Every little bit adds up. Here’s where you stand."
-      : page === "goals"
-        ? "Give what matters a place in your plans."
-        : page === "subscriptions"
-          ? "Subscriptions and memberships, planned before they renew."
-          : page === "purchases"
-            ? "Know what you owe, and when it needs a place in your budget."
-            : page === "bank"
-              ? "Your unallocated savings, ready for whatever comes next."
-              : page === "history"
-                ? "Every contribution, every decision, every milestone."
-                : "Set your pace. We’ll help you keep it realistic.";
+      : page === "emergency"
+        ? "A reserve for emergencies, separate from everyday spending and goals."
+        : page === "goals"
+          ? "Give what matters a place in your plans."
+          : page === "subscriptions"
+            ? "Subscriptions and memberships, planned before they renew."
+            : page === "purchases"
+              ? "Know what you owe, and when it needs a place in your budget."
+              : page === "bank"
+                ? "Your unallocated savings, ready for whatever comes next."
+                : page === "history"
+                  ? "Every contribution, every decision, every milestone."
+                  : "Set your pace. We’ll help you keep it realistic.";
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -896,24 +916,28 @@ export default function App() {
                 onClick={() =>
                   setDialog({
                     kind:
-                      page === "subscriptions"
-                        ? "subscription_create"
-                        : page === "purchases"
-                          ? "purchase_create"
-                          : page === "bank"
-                            ? "deposit"
-                            : "create",
+                      page === "emergency"
+                        ? "emergency_deposit"
+                        : page === "subscriptions"
+                          ? "subscription_create"
+                          : page === "purchases"
+                            ? "purchase_create"
+                            : page === "bank"
+                              ? "deposit"
+                              : "create",
                   })
                 }
               >
                 <Plus size={17} />
-                {page === "subscriptions"
-                  ? "Add subscription"
-                  : page === "purchases"
-                    ? "Add purchase"
-                    : page === "bank"
-                      ? "Add savings"
-                      : "New goal"}
+                {page === "emergency"
+                  ? "Add emergency savings"
+                  : page === "subscriptions"
+                    ? "Add subscription"
+                    : page === "purchases"
+                      ? "Add purchase"
+                      : page === "bank"
+                        ? "Add savings"
+                        : "New goal"}
               </button>
             )}
           </div>
@@ -928,7 +952,7 @@ export default function App() {
             </div>
           )}
           {page === "overview" && (
-            <div className="stats-grid">
+            <div className="stats-grid overview-cash">
               <Stat
                 featured
                 label="SAVED TOWARD GOALS"
@@ -941,14 +965,25 @@ export default function App() {
                 caption="Cash before unpaid commitments"
               />
               <Stat
+                label="EMERGENCY FUND"
+                value={money(emergency, currency)}
+                caption="Reserved for emergencies"
+              />
+              <Stat
                 label="TOTAL TRACKED CASH"
-                value={money(saved + bank, currency)}
-                caption="Goal savings + Bank cash"
+                value={money(saved + bank + emergency, currency)}
+                caption="Goals + Bank + Emergency Fund"
               />
             </div>
           )}
           {(page === "overview" || page === "bank" || page === "purchases") && (
             <BankReserves data={data} />
+          )}
+          {page === "emergency" && (
+            <EmergencyFund
+              data={data}
+              onAction={(kind) => setDialog({ kind })}
+            />
           )}
           {page === "subscriptions" && (
             <Subscriptions
@@ -1362,35 +1397,37 @@ export default function App() {
       {dialog && (
         <Modal
           title={
-            dialog.kind.startsWith("subscription_")
-              ? "Your recurring commitment."
-              : dialog.kind === "purchase_create"
-                ? "Plan for a purchase."
-                : dialog.kind === "purchase_edit"
-                  ? "Update this purchase."
-                  : dialog.kind === "purchase_pay"
-                    ? "Record a payment."
-                    : dialog.kind === "purchase_cancel"
-                      ? "Cancel this purchase?"
-                      : dialog.kind === "create"
-                        ? "Something to look forward to."
-                        : dialog.kind === "detail"
-                          ? selected?.name || "Your goal"
-                          : dialog.kind === "edit"
-                            ? "Find a new pace."
-                            : dialog.kind === "deposit"
-                              ? "A little closer."
-                              : dialog.kind === "transfer"
-                                ? "Give your savings a direction."
-                                : dialog.kind === "spend"
-                                  ? "Record a little of life."
-                                  : dialog.kind === "acquire"
-                                    ? "Make it yours."
-                                    : dialog.kind === "reverse"
-                                      ? "Correct this entry?"
-                                      : dialog.kind === "archive"
-                                        ? "Make room for a new plan?"
-                                        : "A little guidance."
+            dialog.kind.startsWith("emergency_")
+              ? "Your emergency reserve."
+              : dialog.kind.startsWith("subscription_")
+                ? "Your recurring commitment."
+                : dialog.kind === "purchase_create"
+                  ? "Plan for a purchase."
+                  : dialog.kind === "purchase_edit"
+                    ? "Update this purchase."
+                    : dialog.kind === "purchase_pay"
+                      ? "Record a payment."
+                      : dialog.kind === "purchase_cancel"
+                        ? "Cancel this purchase?"
+                        : dialog.kind === "create"
+                          ? "Something to look forward to."
+                          : dialog.kind === "detail"
+                            ? selected?.name || "Your goal"
+                            : dialog.kind === "edit"
+                              ? "Find a new pace."
+                              : dialog.kind === "deposit"
+                                ? "A little closer."
+                                : dialog.kind === "transfer"
+                                  ? "Give your savings a direction."
+                                  : dialog.kind === "spend"
+                                    ? "Record a little of life."
+                                    : dialog.kind === "acquire"
+                                      ? "Make it yours."
+                                      : dialog.kind === "reverse"
+                                        ? "Correct this entry?"
+                                        : dialog.kind === "archive"
+                                          ? "Make room for a new plan?"
+                                          : "A little guidance."
           }
           eyebrow={
             dialog.kind === "detail"
@@ -1399,6 +1436,13 @@ export default function App() {
           }
           onClose={closeDialog}
         >
+          {dialog.kind.startsWith("emergency_") && (
+            <EmergencyForm
+              data={data}
+              mode={dialog.kind as import("./EmergencyFund").EmergencyAction}
+              save={save}
+            />
+          )}
           {dialog.kind.startsWith("purchase_") && (
             <PurchaseForm
               data={data}
@@ -1451,9 +1495,11 @@ export default function App() {
               </p>
               <h3>Your plan keeps its starting point.</h3>
               <p>
-                Ahead and behind compare your balance with the original plan.
-                “From today” shows how much to save to catch up. Edit a plan to
-                set a new baseline; previous plans stay in your export.
+                Ahead and behind compare your balance with the original plan
+                through your most recent payday, when a pay schedule is set in
+                Settings. “From today” shows how much to save to catch up. Edit
+                a plan to set a new baseline; previous plans stay in your
+                export.
               </p>
               <h3>Ready to make it yours?</h3>
               <p>

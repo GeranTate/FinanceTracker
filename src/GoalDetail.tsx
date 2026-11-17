@@ -1,4 +1,5 @@
 import Chart from "./Chart";
+import { periodPlan, paySchedule } from "./lib/paySchedule";
 import { useState } from "react";
 import {
   ArrowDownLeft,
@@ -14,7 +15,6 @@ import {
   goalBalance,
   installments,
   money,
-  plan,
   today,
 } from "./lib/savings";
 export default function GoalDetail({
@@ -39,7 +39,7 @@ export default function GoalDetail({
     balance = goalBalance(data, goal.id),
     currency = data.settings.currency;
   const now = today(data.settings.timezone),
-    p = plan(m, balance, now),
+    p = periodPlan(m, balance, now, data.settings),
     scheduled = goal.start_date > now;
   const schedule = installments(
     scheduleType === "catchup"
@@ -182,7 +182,7 @@ export default function GoalDetail({
               ? `Savings begin ${dateLabel(goal.start_date)}. This goal is not deducted from your current income forecast.`
               : p.funded
                 ? "This milestone is fully funded. Keep going or make it yours."
-                : `${money(Math.abs(p.difference), currency)} ${p.difference < -1 ? "behind" : p.difference > 1 ? "ahead of" : "from"} the original plan. Expected by today: ${money(p.expected, currency)}.`}
+                : `${money(Math.abs(p.difference), currency)} ${p.difference < -1 ? "behind" : p.difference > 1 ? "ahead of" : "from"} the ${paySchedule(data.settings).cadence === "daily" ? "daily" : "pay-period"} plan. Expected through ${dateLabel(p.comparisonDate, true)}: ${money(p.expected, currency)}.`}
           </p>
           <div className="schedule-controls">
             <div className="segmented">

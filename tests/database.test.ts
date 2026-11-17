@@ -31,7 +31,9 @@ function total(s: any) {
   return s.entries.reduce((sum: number, e: any) => sum + e.amount, 0);
 }
 function balance(s: any, goal: string | null) {
-  const a = s.accounts.find((a: any) => a.goal_id === goal);
+  const a = s.accounts.find((a: any) =>
+    goal ? a.goal_id === goal : a.kind === "bank",
+  );
   return s.entries
     .filter((e: any) => e.account_id === a.id)
     .reduce((sum: number, e: any) => sum + e.amount, 0);
@@ -493,10 +495,132 @@ test("subscriptions create credit charges once, catch up while closed, and prese
   await asUser(alice);
 });
 
-test('Bank min/max preferences persist without restricting ledger actions',async()=>{
- await asUser(alice);
- await cmd('settings',{...(await snapshot()).settings,bank_min:1000000000,bank_max:2000000000});
- assert.equal((await snapshot()).settings.bank_min,1000000000);
- await cmd('deposit',{amount:1,note:'Below preferred minimum is allowed'});
- await assert.rejects(async()=>cmd('settings',{...(await snapshot()).settings,bank_min:200,bank_max:100}),/bank_preference_range/);
+test("Bank min/max preferences persist without restricting ledger actions", async () => {
+  await asUser(alice);
+  await cmd("settings", {
+    ...(await snapshot()).settings,
+    bank_min: 1000000000,
+    bank_max: 2000000000,
+  });
+  assert.equal((await snapshot()).settings.bank_min, 1000000000);
+  await cmd("deposit", {
+    amount: 1,
+    note: "Below preferred minimum is allowed",
+  });
+  await assert.rejects(
+    async () =>
+      cmd("settings", {
+        ...(await snapshot()).settings,
+        bank_min: 200,
+        bank_max: 100,
+      }),
+    /bank_preference_range/,
+  );
+});
+
+test("pay schedules persist and reject invalid payday settings", async () => {
+  await asUser(alice);
+  const base = (await snapshot()).settings;
+  await cmd("settings", {
+    ...base,
+    pay_schedule: { cadence: "weekly", weekday: 5 },
+  });
+  assert.equal((await snapshot()).settings.pay_schedule.weekday, 5);
+  await assert.rejects(
+    () =>
+      cmd("settings", {
+        ...base,
+        pay_schedule: { cadence: "weekly", weekday: 7 },
+      }),
+    /weekly payday/,
+  );
+  await assert.rejects(
+    () =>
+      cmd("settings", {
+        ...base,
+        pay_schedule: { cadence: "biweekly", anchor_date: "" },
+      }),
+    /anchor/,
+  );
+  await assert.rejects(
+    () =>
+      cmd("settings", {
+        ...base,
+        pay_schedule: { cadence: "semimonthly", day1: 15, day2: 10 },
+      }),
+    /increasing/,
+  );
+  await cmd("settings", {
+    ...base,
+    pay_schedule: { cadence: "semimonthly", day1: 1, day2: 15 },
+  });
+  assert.equal((await snapshot()).settings.pay_schedule.cadence, "semimonthly");
+});
+test("Emergency Fund is separate cash, preserves transfers, blocks overdrafts and requires a reason", async () => {
+  await asUser(alice);
+  const s = await snapshot(),
+    fund = s.accounts.find((a: any) => a.kind === "emergency");
+  assert.ok(fund);
+  assert.equal(s.accounts.filter((a: any) => a.kind === "emergency").length, 1);
+  const before = total(s),
+    bankBefore = balance(s, null);
+  await cmd("emergency_deposit", { amount: 20000, note: "Reserve" });
+  assert.equal(total(await snapshot()), before + 20000);
+  assert.equal(balance(await snapshot(), null), bankBefore);
+  await cmd("emergency_transfer", { amount: 5000, direction: "to_fund" });
+  assert.equal(total(await snapshot()), before + 20000);
+  assert.equal(balance(await snapshot(), null), bankBefore - 5000);
+  await assert.rejects(
+    () => cmd("emergency_spend", { amount: 1000 }),
+    /Describe the emergency/,
+  );
+  const tx = (
+    await cmd("emergency_spend", { amount: 3000, note: "Urgent repair" })
+  ).transaction_id;
+  assert.equal(total(await snapshot()), before + 17000);
+  await cmd("reverse", { transaction_id: tx });
+  assert.equal(total(await snapshot()), before + 20000);
+  await assert.rejects(
+    () => cmd("emergency_spend", { amount: 900000000, note: "Too much" }),
+    /overdraw/,
+  );
+  await cmd("emergency_transfer", { amount: 1000, direction: "to_bank" });
+  assert.equal(total(await snapshot()), before + 20000);
+  await asUser(bob);
+  await cmd("initialize");
+  assert.equal(
+    (await snapshot()).accounts.some((a: any) => a.id === fund.id),
+    false,
+  );
+  await asUser(alice);
+});
+test("moving an existing goal preserves total cash and history, clears the goal and sets the reserve target", async () => {
+  await asUser(alice);
+  const id = await goal("Convert emergency savings", 7500, 10000),
+    before = await snapshot();
+  const fund = before.accounts.find((a: any) => a.kind === "emergency"),
+    fundBefore = before.entries
+      .filter((e: any) => e.account_id === fund.id)
+      .reduce((s: number, e: any) => s + e.amount, 0);
+  await asUser(bob);
+  await assert.rejects(
+    () => cmd("emergency_from_goal", { goal_id: id }),
+    /not found/,
+  );
+  await asUser(alice);
+  const request = crypto.randomUUID();
+  await cmd("emergency_from_goal", { goal_id: id }, request);
+  await cmd("emergency_from_goal", { goal_id: id }, request);
+  const after = await snapshot();
+  assert.equal(total(after), total(before));
+  assert.equal(balance(after, id), 0);
+  assert.equal(
+    after.entries
+      .filter((e: any) => e.account_id === fund.id)
+      .reduce((s: number, e: any) => s + e.amount, 0),
+    fundBefore + 7500,
+  );
+  assert.equal(after.goals.find((g: any) => g.id === id).status, "archived");
+  assert.equal(after.milestones.filter((m: any) => m.goal_id === id).length, 2);
+  assert.equal(after.settings.emergency_target, 10000);
 });
